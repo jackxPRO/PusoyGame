@@ -15,11 +15,15 @@ export function ShuffleOverlay() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (roundIndex == null) {
-      prev.current = null;
+    if (roundIndex == null) return;
+    // Record the first index we ever see WITHOUT animating, so mounting mid-game
+    // (e.g. after a reconnect or a routine state refresh) never shows a shuffle.
+    if (prev.current === null) {
+      prev.current = roundIndex;
       return;
     }
-    if (prev.current === roundIndex) return;
+    // Only animate on a genuine new deal (the round number went up).
+    if (roundIndex <= prev.current) return;
     prev.current = roundIndex;
     const raf = requestAnimationFrame(() => setShow(true));
     const hide = setTimeout(() => setShow(false), 1100);

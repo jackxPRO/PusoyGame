@@ -707,16 +707,45 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       setConnecting(true);
       try {
         const supabase = getSupabase();
-        const { data } = await supabase.from("rooms").select("id").eq("id", stored.roomId).maybeSingle();
+        const { data } = await supabase
+          .from("rooms")
+          .select("id,settings,status")
+          .eq("id", stored.roomId)
+          .maybeSingle();
         if (cancelled) return;
         if (!data) {
           clearStoredSession();
           return;
         }
-        // Mark myself alive again on refresh so the reconnect timer resets.
+        const roomData = data as Pick<RoomRow, "id" | "settings" | "status">;
+        // Look at my row to decide whether I return within the reconnect window.
+        const { data: myRowData } = await supabase
+          .from("room_players")
+          .select("last_seen,pending,queued,eliminated")
+          .eq("room_id", stored.roomId)
+          .eq("seat", stored.mySeat)
+          .maybeSingle();
+        const mine = myRowData as
+          | Pick<PlayerRow, "last_seen" | "pending" | "queued" | "eliminated">
+          | null;
+        const reconnectMs = reconnectSecondsFor(roomData.settings) * 1000;
+        const awayMs = mine?.last_seen
+          ? Date.now() - new Date(mine.last_seen).getTime()
+          : Infinity;
+        const withinWindow = awayMs <= reconnectMs;
+        // Within the window I resume exactly where I left off (same seat, cards,
+        // bets, round) — never queued/spectating. Past it I come back as a
+        // spectator and am dealt in from the next round. Queued/eliminated
+        // states are left untouched.
         await supabase
           .from("room_players")
-          .update({ connected: true, last_seen: new Date().toISOString() })
+          .update({
+            connected: true,
+            last_seen: new Date().toISOString(),
+            ...(mine?.queued || mine?.eliminated
+              ? {}
+              : { pending: roomData.status === "in_progress" ? !withinWindow : false }),
+          })
           .eq("room_id", stored.roomId)
           .eq("seat", stored.mySeat);
         setSession(stored);
