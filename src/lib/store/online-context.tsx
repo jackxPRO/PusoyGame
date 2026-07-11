@@ -59,6 +59,8 @@ interface PlayerRow {
   chips: number;
   ready: boolean;
   connected: boolean;
+  /** true = joined mid-game; waits for a scoop before playing. */
+  pending?: boolean;
 }
 interface RoundRow {
   id: string;
@@ -178,6 +180,8 @@ export interface OnlineContextValue {
   roomLoaded: boolean;
   started: boolean;
   waiting: boolean;
+  /** I joined mid-game and must wait for a scoop before I can play. */
+  isPending: boolean;
   lobbyPlayers: LobbyPlayer[];
   submittedSeats: number[];
   login: (username: string, password: string) => Promise<void>;
@@ -265,7 +269,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     const { data: roomRows } = await supabase
       .from("rooms")
       .select("id,code,host_name,password,status")
-      .eq("status", "lobby")
+      .in("status", ["lobby", "in_progress"])
       .order("created_at", { ascending: false });
     const list = (roomRows as Pick<RoomRow, "id" | "code" | "host_name" | "password" | "status">[]) ?? [];
     const ids = list.map((r) => r.id);
@@ -405,16 +409,17 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   // Host resolves the round once every seated player has submitted.
   useEffect(() => {
     if (!session?.isHost || !room || !round || result) return;
-    if (players.length < 2) return;
+    const activePlayers = players.filter((p) => !p.pending);
+    if (activePlayers.length < 2) return;
     const submitted = moves.filter((m) => m.submitted);
-    if (submitted.length !== players.length) return;
+    if (submitted.length !== activePlayers.length) return;
     if (resolvedRef.current.has(round.id)) return;
     resolvedRef.current.add(round.id);
 
     void (async () => {
       const supabase = getSupabase();
       const bySeat = new Map(moves.map((m) => [m.seat, m]));
-      const enginePlayers = players.map((p) => {
+      const enginePlayers = activePlayers.map((p) => {
         const m = bySeat.get(p.seat)!;
         return {
           id: `seat-${p.seat}`,
@@ -443,7 +448,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
         chip_deltas: detail.chipDeltas,
         detail,
       });
-      for (const p of players) {
+      for (const p of activePlayers) {
         const delta = detail.chipDeltas[`seat-${p.seat}`] ?? 0;
         if (delta !== 0) {
           const newChips = p.chips + delta;
@@ -458,9 +463,19 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
           }
         }
       }
+      // A scoop resets the pot — activate anyone who joined mid-game so they
+      // play from the next round.
+      if (detail.scoring.scoop) {
+        void supabase
+          .from("room_players")
+          .update({ pending: false })
+          .eq("room_id", room.id)
+          .eq("pending", true)
+          .then(() => undefined);
+      }
       const banker = nextActiveSeat(
         round.banker_seat,
-        players.map((p) => p.seat),
+        activePlayers.map((p) => p.seat),
         room.settings.bankerRotation,
         detail.scoring.scoop,
       );
@@ -604,7 +619,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
               .eq("id", mine.id),
           );
         } else {
-          if (roomData.status !== "lobby") throw new Error("Game already started");
+          if (roomData.status === "ended") throw new Error("This game has ended.");
           const taken = new Set(existingPlayers.map((p) => p.seat));
           seat = -1;
           for (let s = 0; s < SEAT_COUNT; s++) {
@@ -614,6 +629,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
             }
           }
           if (seat < 0) throw new Error("Room is full");
+          // Joining after the game has started: sit out (pending) until the
+          // pot is next scooped, then the host activates them.
+          const pending = roomData.status !== "lobby";
           await run(
             "Join",
             supabase.from("room_players").insert({
@@ -623,6 +641,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
               nickname: account.username,
               chips: account.balance,
               ready: false,
+              pending,
             }),
           );
         }
@@ -649,12 +668,12 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
   const dealRound = useCallback(async () => {
     if (!session?.isHost || !room) return;
-    if (players.length < 2) {
+    const active = players.filter((p) => !p.pending).sort((a, b) => a.seat - b.seat);
+    if (active.length < 2) {
       setError("Need at least two players to start.");
       return;
     }
     const supabase = getSupabase();
-    const active = [...players].sort((a, b) => a.seat - b.seat);
     const dealt = deal(active.length);
     const hands: Card[][] = Array.from({ length: SEAT_COUNT }, () => []);
     active.forEach((p, i) => {
@@ -740,7 +759,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
   const autoArrangeHuman = useCallback(() => {
     if (!round || !room || !session) return;
-    setMyArrangement(autoArrange(round.hands[session.mySeat], room.settings.suitRanking));
+    const myHand = round.hands[session.mySeat];
+    if (!myHand || myHand.length === 0) return;
+    setMyArrangement(autoArrange(myHand, room.settings.suitRanking));
   }, [round, room, session]);
 
   const clearRoom = useCallback(
@@ -831,6 +852,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const effectiveSettings = localSettings ?? room?.settings ?? null;
   const started = room?.status === "in_progress" && Boolean(round);
   const waiting = effectiveSubmitted && !result;
+  const isPending = Boolean(
+    session ? players.find((p) => p.seat === session.mySeat)?.pending : false,
+  );
 
   const clampPotBet = useCallback(
     (v: number) => {
@@ -858,7 +882,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     const settings = localSettings ?? room.settings;
 
     const seatStates: SeatState[] = players
-      .slice()
+      .filter((p) => !p.pending)
       .sort((a, b) => a.seat - b.seat)
       .map((p) => ({
         id: `seat-${p.seat}`,
@@ -877,8 +901,10 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
           bankerSeat: round.banker_seat,
           hands: round.hands,
           arrangements: Array.from({ length: SEAT_COUNT }, (_, seat) => {
+            const dealtHand = round.hands[seat];
+            if (!dealtHand || dealtHand.length === 0) return EMPTY_ARR;
             if (seat === session.mySeat) {
-              return myArrangement ?? autoArrange(round.hands[seat], settings.suitRanking);
+              return myArrangement ?? autoArrange(dealtHand, settings.suitRanking);
             }
             return bySeat.get(seat)?.arrangement ?? EMPTY_ARR;
           }),
@@ -921,7 +947,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     };
 
     const humanSpecials =
-      round && session ? detectSpecials(round.hands[session.mySeat], settings) : [];
+      round && session && round.hands[session.mySeat]?.length
+        ? detectSpecials(round.hands[session.mySeat], settings)
+        : [];
 
     return {
       state,
@@ -979,6 +1007,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     roomLoaded: room !== null,
     started,
     waiting,
+    isPending,
     lobbyPlayers,
     submittedSeats: Array.from(
       new Set([

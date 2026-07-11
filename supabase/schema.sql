@@ -37,12 +37,15 @@ create table if not exists public.room_players (
   chips      integer not null default 1000,
   ready      boolean not null default false,
   connected  boolean not null default true,
+  -- true = joined mid-game; sits out until the pot is scooped, then activates.
+  pending    boolean not null default false,
   created_at timestamptz not null default now(),
   unique (room_id, seat)
 );
 
 -- Add the account link if the table already exists:
 alter table public.room_players add column if not exists account_id uuid;
+alter table public.room_players add column if not exists pending boolean not null default false;
 
 -- One row per dealt round. `hands` holds the private deal (server-side).
 create table if not exists public.rounds (

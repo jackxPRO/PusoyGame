@@ -80,13 +80,13 @@ export function RoomBrowser() {
 
       <Panel className="fade-up">
         <div className="mb-3 flex items-center justify-between">
-          <SectionTitle>Open Rooms ({rooms.length})</SectionTitle>
+          <SectionTitle>Rooms ({rooms.length})</SectionTitle>
           <GhostButton size="sm" onClick={() => void refreshRooms()}>
             Refresh
           </GhostButton>
         </div>
         {rooms.length === 0 ? (
-          <p className="text-sm text-slate-500">No open rooms. Create one to start.</p>
+          <p className="text-sm text-slate-500">No rooms yet. Create one to start.</p>
         ) : (
           <div className="grid gap-2">
             {rooms.map((room) => (
@@ -94,7 +94,7 @@ export function RoomBrowser() {
                 key={room.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="font-mono text-sm tracking-widest text-gold">{room.code}</span>
                   <span className="text-sm text-slate-200">host {room.host}</span>
                   {room.hasPassword ? (
@@ -102,6 +102,15 @@ export function RoomBrowser() {
                       locked
                     </span>
                   ) : null}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${
+                      room.status === "in_progress"
+                        ? "bg-emerald-500/15 text-emerald-300"
+                        : "bg-sky-500/15 text-sky-300"
+                    }`}
+                  >
+                    {room.status === "in_progress" ? "Game started" : "Waiting"}
+                  </span>
                   <span className="text-xs text-slate-500">{room.players}/4</span>
                 </div>
                 {joinTarget?.id === room.id ? (
@@ -125,7 +134,11 @@ export function RoomBrowser() {
                     onClick={() => onJoin(room)}
                     disabled={connecting || room.players >= 4}
                   >
-                    {room.players >= 4 ? "Full" : "Join"}
+                    {room.players >= 4
+                      ? "Full"
+                      : room.status === "in_progress"
+                        ? "Watch & Wait"
+                        : "Join"}
                   </GhostButton>
                 )}
               </div>

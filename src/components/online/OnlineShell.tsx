@@ -45,7 +45,7 @@ function WaitingScreen() {
 
 function OnlineGame() {
   const { state, resetToLobby } = useGame();
-  const { waiting, session } = useOnline();
+  const { waiting, session, isPending } = useOnline();
   const [showHistory, setShowHistory] = useState(false);
 
   return (
@@ -104,6 +104,17 @@ function OnlineGame() {
       {showHistory ? (
         <div className="mx-auto max-w-5xl p-4 sm:p-6">
           <RoundHistory />
+        </div>
+      ) : isPending ? (
+        <div className="mx-auto w-full max-w-lg p-6">
+          <Panel className="text-center fade-up">
+            <h2 className="mb-1 text-xl font-black gold-text">You&apos;re in the Room</h2>
+            <p className="mb-4 text-sm text-slate-400">
+              The game is already in progress. You&apos;ll join the action as soon as the pot is
+              scooped — hang tight until the next hand.
+            </p>
+            <p className="text-xs text-slate-500">Waiting for a scoop to reset the pot&hellip;</p>
+          </Panel>
         </div>
       ) : waiting ? (
         <WaitingScreen />
