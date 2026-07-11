@@ -56,8 +56,6 @@ function OnlineGame() {
     myZeroBalance,
     hostSeat,
     pauseGame,
-    removePlayer,
-    lobbyPlayers,
   } = useOnline();
   const [showHistory, setShowHistory] = useState(false);
   const iAmHost = session?.mySeat === hostSeat;
@@ -147,10 +145,6 @@ function OnlineGame() {
         </div>
       ) : null}
 
-      {iAmHost && state.phase === "revealed" ? (
-        <HostControls players={lobbyPlayers} mySeat={session?.mySeat ?? -1} onRemove={removePlayer} />
-      ) : null}
-
       {showHistory ? (
         <div className="mx-auto max-w-5xl p-4 sm:p-6">
           <RoundHistory />
@@ -179,48 +173,6 @@ function OnlineGame() {
       ) : state.phase === "revealed" ? (
         <ResultsPanel />
       ) : null}
-    </div>
-  );
-}
-
-/** Host-only panel to remove disconnected players between rounds (Rule 12). */
-function HostControls({
-  players,
-  mySeat,
-  onRemove,
-}: {
-  players: { seat: number; nickname: string; ready: boolean; chips: number }[];
-  mySeat: number;
-  onRemove: (seat: number) => void;
-}) {
-  const others = players.filter((p) => p.seat !== mySeat);
-  if (others.length === 0) return null;
-  return (
-    <div className="mx-auto max-w-5xl px-4 pt-3">
-      <Panel className="fade-up">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Host Controls
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {others.map((p) => (
-            <div
-              key={p.seat}
-              className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-300"
-            >
-              <span>
-                {p.nickname}: <span className="font-bold">{p.chips}</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => onRemove(p.seat)}
-                className="rounded bg-rose-500/20 px-2 py-0.5 text-rose-300 hover:bg-rose-500/30"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      </Panel>
     </div>
   );
 }

@@ -41,6 +41,7 @@ function SeatReveal({
   isBanker,
   isHuman,
   matchLine,
+  breakdown,
 }: {
   seat: number;
   nickname: string;
@@ -50,6 +51,7 @@ function SeatReveal({
   isBanker: boolean;
   isHuman: boolean;
   matchLine: string | null;
+  breakdown: { label: string; value: number }[];
 }) {
   return (
     <Panel className={`fade-up ${isBanker ? "gold-border" : ""}`}>
@@ -83,6 +85,23 @@ function SeatReveal({
         <MiniRow cards={arrangement.front} front />
       </div>
       {matchLine ? <p className="mt-2 text-xs text-slate-400">{matchLine}</p> : null}
+      {breakdown.length > 0 ? (
+        <div className="mt-2 space-y-0.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
+          {breakdown.map((b) => (
+            <div key={b.label} className="flex items-center justify-between text-[0.7rem]">
+              <span className="text-slate-500">{b.label}</span>
+              <span
+                className={
+                  b.value > 0 ? "text-emerald-400" : b.value < 0 ? "text-rose-400" : "text-slate-500"
+                }
+              >
+                {b.value > 0 ? "+" : ""}
+                {b.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <p className="mt-1 text-[0.65rem] text-slate-600">Seat {seat + 1}</p>
     </Panel>
   );
@@ -150,6 +169,35 @@ export function ResultsPanel() {
             }`;
           }
           const declared = round.declared[p.seat];
+
+          // Transparent breakdown of the net (rows, pot ante, scoop, side bets).
+          const matches = result.scoring.matches;
+          const scoop = result.scoring.scoop;
+          const bonusEach = matches.length ? result.scoring.scoopBonusAwarded / matches.length : 0;
+          const rows = isBanker
+            ? matches.reduce((s, m) => s + m.personalDelta, 0)
+            : match
+              ? -match.personalDelta
+              : 0;
+          const scoopBonus = scoop
+            ? isBanker
+              ? result.scoring.scoopBonusAwarded
+              : -bonusEach
+            : 0;
+          const potAnte = -(round.bets[p.seat]?.potBet ?? 0);
+          const potWon = scoop && isBanker ? result.potAwardedAmount : 0;
+          const sideBets = result.sideBetSettlements.reduce(
+            (s, sb) => s + (sb.deltas[p.id] ?? 0),
+            0,
+          );
+          const breakdown = [
+            { label: isBanker ? "Rows (vs all)" : "Rows", value: rows },
+            { label: "Pot ante", value: potAnte },
+            { label: "Scoop bonus", value: scoopBonus },
+            { label: "Pot won", value: potWon },
+            { label: "Side bets", value: sideBets },
+          ].filter((b) => b.value !== 0);
+
           return (
             <SeatReveal
               key={p.id}
@@ -161,6 +209,7 @@ export function ResultsPanel() {
               isBanker={isBanker}
               isHuman={p.seat === mySeat}
               matchLine={matchLine}
+              breakdown={breakdown}
             />
           );
         })}
