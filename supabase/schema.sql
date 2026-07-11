@@ -39,6 +39,8 @@ create table if not exists public.room_players (
   connected  boolean not null default true,
   -- true = joined mid-game; sits out until the pot is scooped, then activates.
   pending    boolean not null default false,
+  -- when the player quit/disconnected; used for the rejoin grace window.
+  disconnected_at timestamptz,
   created_at timestamptz not null default now(),
   unique (room_id, seat)
 );
@@ -46,6 +48,7 @@ create table if not exists public.room_players (
 -- Add the account link if the table already exists:
 alter table public.room_players add column if not exists account_id uuid;
 alter table public.room_players add column if not exists pending boolean not null default false;
+alter table public.room_players add column if not exists disconnected_at timestamptz;
 
 -- One row per dealt round. `hands` holds the private deal (server-side).
 create table if not exists public.rounds (

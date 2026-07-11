@@ -61,6 +61,8 @@ interface PlayerRow {
   connected: boolean;
   /** true = joined mid-game; waits for a scoop before playing. */
   pending?: boolean;
+  /** ISO time the player quit; used for the rejoin grace window. */
+  disconnected_at?: string | null;
 }
 interface RoundRow {
   id: string;
@@ -100,6 +102,9 @@ interface Session {
 
 const SIDE_BET_STAKE = 20;
 const EMPTY_ARR: Arrangement = { front: [], middle: [], back: [] };
+// A quit player keeps their seat/chips for this long to rejoin; afterwards
+// they are purged and considered to have fully quit.
+const REJOIN_GRACE_MS = 2 * 60 * 1000;
 const STORAGE_KEY = "pusoy_session";
 const ACCOUNT_KEY = "pusoy_account_id";
 
@@ -424,9 +429,11 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   // Host resolves the round once every seated player has submitted.
   useEffect(() => {
     if (!session?.isHost || !room || !round || result) return;
-    const activePlayers = players.filter((p) => !p.pending);
+    // A player who quits (disconnected) or joined mid-game (pending) is not part
+    // of the current hand, so the round resolves with whoever is left.
+    const activePlayers = players.filter((p) => !p.pending && p.connected);
     if (activePlayers.length < 2) return;
-    const submitted = moves.filter((m) => m.submitted);
+    const submitted = moves.filter((m) => m.submitted && activePlayers.some((p) => p.seat === m.seat));
     if (submitted.length !== activePlayers.length) return;
     if (resolvedRef.current.has(round.id)) return;
     resolvedRef.current.add(round.id);
@@ -480,14 +487,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       }
       // A scoop resets the pot — activate anyone who joined mid-game so they
       // play from the next round.
-      if (detail.scoring.scoop) {
-        void supabase
-          .from("room_players")
-          .update({ pending: false })
-          .eq("room_id", room.id)
-          .eq("pending", true)
-          .then(() => undefined);
-      }
       const banker = nextActiveSeat(
         round.banker_seat,
         activePlayers.map((p) => p.seat),
@@ -520,6 +519,15 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     if (!session) return;
     const id = setInterval(() => {
       void loadRoomState(session.roomId);
+      // Purge players who quit and never rejoined within the grace window.
+      const cutoff = new Date(Date.now() - REJOIN_GRACE_MS).toISOString();
+      void getSupabase()
+        .from("room_players")
+        .delete()
+        .eq("room_id", session.roomId)
+        .eq("connected", false)
+        .lt("disconnected_at", cutoff)
+        .then(() => undefined);
     }, 2000);
     return () => clearInterval(id);
   }, [session, loadRoomState]);
@@ -626,11 +634,20 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
         let seat: number;
         if (mine) {
           seat = mine.seat;
+          // Rejoining while a game is in progress: sit out (pending) until the
+          // next round, so we don't disrupt the hand being played. The host
+          // (seat 0) stays active so they can keep running the game.
+          const rejoinPending = roomData.status === "in_progress" && mine.seat !== 0;
           await run(
             "Rejoin",
             supabase
               .from("room_players")
-              .update({ connected: true, account_id: account.id })
+              .update({
+                connected: true,
+                account_id: account.id,
+                pending: rejoinPending,
+                disconnected_at: null,
+              })
               .eq("id", mine.id),
           );
         } else {
@@ -645,8 +662,31 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
           }
           if (seat < 0) throw new Error("Room is full");
           // Joining after the game has started: sit out (pending) until the
-          // pot is next scooped, then the host activates them.
+          // next round is dealt.
           const pending = roomData.status !== "lobby";
+          // Buy into the accumulated pot — pay each elapsed round's pot bet so
+          // the newcomer covers what the existing players have contributed.
+          let chips = account.balance;
+          if (pending && roomData.round_no >= 1) {
+            let buyIn = 0;
+            for (let r = 1; r <= roomData.round_no; r++) {
+              buyIn += potBetForRound(roomData.settings, r);
+            }
+            buyIn = Math.min(Math.max(0, buyIn), account.balance);
+            if (buyIn > 0) {
+              chips = account.balance - buyIn;
+              await run(
+                "Pot buy-in",
+                supabase.from("rooms").update({ pot: roomData.pot + buyIn }).eq("id", roomData.id),
+              );
+              void supabase
+                .from("accounts")
+                .update({ balance: chips })
+                .eq("id", account.id)
+                .then(() => undefined);
+              setAccount({ ...account, balance: chips });
+            }
+          }
           await run(
             "Join",
             supabase.from("room_players").insert({
@@ -654,7 +694,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
               account_id: account.id,
               seat,
               nickname: account.username,
-              chips: account.balance,
+              chips,
               ready: false,
               pending,
             }),
@@ -683,24 +723,31 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
   const dealRound = useCallback(async () => {
     if (!session?.isHost || !room) return;
-    const active = players.filter((p) => !p.pending).sort((a, b) => a.seat - b.seat);
-    if (active.length < 2) {
+    const supabase = getSupabase();
+    // Everyone currently connected plays the new round. Pending players
+    // (mid-game joiners and returning quitters) become active as the next
+    // round is dealt.
+    const participants = players.filter((p) => p.connected).sort((a, b) => a.seat - b.seat);
+    if (participants.length < 2) {
       setError("Need at least two players to start.");
       return;
     }
-    const supabase = getSupabase();
-    const dealt = deal(active.length);
+    const pendingIds = participants.filter((p) => p.pending).map((p) => p.id);
+    if (pendingIds.length) {
+      await supabase.from("room_players").update({ pending: false }).in("id", pendingIds);
+    }
+    const dealt = deal(participants.length);
     const hands: Card[][] = Array.from({ length: SEAT_COUNT }, () => []);
-    active.forEach((p, i) => {
+    participants.forEach((p, i) => {
       hands[p.seat] = dealt[i];
     });
     const nextNo = room.round_no + 1;
     const banker =
       room.round_no === 0
-        ? active[Math.floor(Math.random() * active.length)].seat
-        : active.some((p) => p.seat === room.banker_seat)
+        ? participants[Math.floor(Math.random() * participants.length)].seat
+        : participants.some((p) => p.seat === room.banker_seat)
           ? room.banker_seat
-          : active[0].seat;
+          : participants[0].seat;
     await supabase
       .from("rounds")
       .insert({ room_id: room.id, round_no: nextNo, banker_seat: banker, hands, phase: "betting" });
@@ -798,7 +845,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
           const supabase = getSupabase();
           await supabase
             .from("room_players")
-            .update({ connected: false, ready: false })
+            .update({ connected: false, ready: false, disconnected_at: new Date().toISOString() })
             .eq("room_id", s.roomId)
             .eq("seat", s.mySeat);
           const { data: remaining } = await supabase
@@ -892,7 +939,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     const settings = localSettings ?? room.settings;
 
     const seatStates: SeatState[] = players
-      .filter((p) => !p.pending)
+      .filter((p) => !p.pending && p.connected)
       .sort((a, b) => a.seat - b.seat)
       .map((p) => ({
         id: `seat-${p.seat}`,
@@ -1003,7 +1050,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   ]);
 
   const lobbyPlayers: LobbyPlayer[] = players
-    .slice()
+    .filter((p) => p.connected)
     .sort((a, b) => a.seat - b.seat)
     .map((p) => ({ seat: p.seat, nickname: p.nickname, ready: p.ready, chips: p.chips }));
 
