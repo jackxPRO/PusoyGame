@@ -6,6 +6,7 @@ import {
   SPECIAL_HAND_LABELS,
   evaluateFive,
   evaluateThree,
+  shuffle,
   validateArrangement,
   type Arrangement,
   type Card,
@@ -82,6 +83,13 @@ export function ArrangeBoard() {
     }
   };
 
+  const shuffleHand = () => {
+    if (declared) return;
+    const s = shuffle(round.hands[mySeat]);
+    setSelected(null);
+    setHumanArrangement({ front: s.slice(0, 3), middle: s.slice(3, 8), back: s.slice(8, 13) });
+  };
+
   const canSubmit = state.settings.allowInvalidHand || validation.ordered || Boolean(declared);
 
   return (
@@ -94,6 +102,9 @@ export function ArrangeBoard() {
           </p>
         </div>
         <div className="flex gap-2">
+          <GhostButton onClick={shuffleHand} disabled={Boolean(declared)}>
+            Auto Shuffle
+          </GhostButton>
           <GhostButton onClick={autoArrangeHuman} disabled={Boolean(declared)}>
             Auto Arrange
           </GhostButton>

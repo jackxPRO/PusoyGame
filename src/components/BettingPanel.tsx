@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SIDE_BET_LABELS, sortByRankDesc, type SideBetId } from "@/lib/game";
+import { SIDE_BET_LABELS, effectiveMinPot, sortByRankDesc, type SideBetId } from "@/lib/game";
 import { useGame } from "@/lib/store/game-context";
 import { PlayingCard } from "./PlayingCard";
 import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
@@ -15,9 +15,12 @@ export function BettingPanel() {
   const isBanker = round.bankerSeat === mySeat;
   const myId = `seat-${mySeat}`;
 
+  const minPot = effectiveMinPot(state.settings, round.index);
+  const isFirstRound = round.index <= 1;
+
   const [step, setStep] = useState<"main" | "side">("side");
-  const [potBet, setPotBet] = useState(state.settings.minPotBet);
-  const [personalBet, setPersonalBet] = useState(state.settings.minPersonalBet);
+  const [potBet, setPotBet] = useState<number | null>(minPot);
+  const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
   const [joined, setJoined] = useState<Record<SideBetId, boolean>>(
     () => Object.fromEntries(ALL_SIDE_BETS.map((id) => [id, false])) as Record<SideBetId, boolean>,
   );
@@ -37,11 +40,23 @@ export function BettingPanel() {
   const setStake = (id: SideBetId, v: number) =>
     updateSettings({ sideBetStakes: { ...state.settings.sideBetStakes, [id]: Math.max(0, v) } });
 
+  const potInvalid =
+    potBet == null ||
+    potBet < minPot ||
+    (state.settings.maxPotBet != null && potBet > state.settings.maxPotBet);
+  const personalInvalid =
+    !isBanker &&
+    (personalBet == null ||
+      personalBet < state.settings.minPersonalBet ||
+      (state.settings.maxPersonalBet != null && personalBet > state.settings.maxPersonalBet));
+  const betsInvalid = potInvalid || personalInvalid;
+
   const finish = () => {
+    if (betsInvalid || potBet == null) return;
     const sideBets = enabledSide.filter((id) => joined[id]);
     placeBets({
       potBet: clampPotBet(potBet),
-      personalBet: isBanker ? 0 : clampPersonalBet(personalBet),
+      personalBet: isBanker ? 0 : clampPersonalBet(personalBet ?? 0),
       sideBets,
     });
   };
@@ -211,34 +226,66 @@ export function BettingPanel() {
 
       <Panel className="mb-4 fade-up">
         <SectionTitle>Mandatory & Personal Bets</SectionTitle>
+        {isFirstRound ? (
+          <p className="mb-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">
+            First round mandatory pot: everyone must bet at least {minPot}. Later rounds use the
+            progressive minimum ({state.settings.minPotBet}).
+          </p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
-          <NumberField
-            label={`Progressive Pot (min ${state.settings.minPotBet}${
-              state.settings.maxPotBet ? `, max ${state.settings.maxPotBet}` : ""
-            })`}
-            value={potBet}
-            min={state.settings.minPotBet}
-            onChange={(v) => setPotBet(v ?? state.settings.minPotBet)}
-          />
+          <div>
+            <NumberField
+              label={`${isFirstRound ? "Mandatory Pot" : "Progressive Pot"} (min ${minPot}${
+                state.settings.maxPotBet ? `, max ${state.settings.maxPotBet}` : ""
+              })`}
+              value={potBet}
+              min={minPot}
+              placeholder={`min ${minPot}`}
+              onChange={(v) => setPotBet(v)}
+            />
+            {potInvalid ? (
+              <p className="mt-1 text-xs text-rose-400">
+                {potBet == null
+                  ? `Enter a pot bet of at least ${minPot}.`
+                  : potBet < minPot
+                    ? `Pot bet must be at least ${minPot}.`
+                    : `Pot bet can't exceed ${state.settings.maxPotBet}.`}
+              </p>
+            ) : null}
+          </div>
           {isBanker ? (
             <p className="flex items-center rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">
               You are the Banker this round — challengers bet against you.
             </p>
           ) : (
-            <NumberField
-              label={`Personal Bet per row (min ${state.settings.minPersonalBet}${
-                state.settings.maxPersonalBet ? `, max ${state.settings.maxPersonalBet}` : ""
-              })`}
-              value={personalBet}
-              min={state.settings.minPersonalBet}
-              onChange={(v) => setPersonalBet(v ?? state.settings.minPersonalBet)}
-            />
+            <div>
+              <NumberField
+                label={`Personal Bet per row (min ${state.settings.minPersonalBet}${
+                  state.settings.maxPersonalBet ? `, max ${state.settings.maxPersonalBet}` : ""
+                })`}
+                value={personalBet}
+                min={state.settings.minPersonalBet}
+                placeholder={`min ${state.settings.minPersonalBet}`}
+                onChange={(v) => setPersonalBet(v)}
+              />
+              {personalInvalid ? (
+                <p className="mt-1 text-xs text-rose-400">
+                  {personalBet == null
+                    ? `Enter a personal bet of at least ${state.settings.minPersonalBet}.`
+                    : personalBet < state.settings.minPersonalBet
+                      ? `Personal bet must be at least ${state.settings.minPersonalBet}.`
+                      : `Personal bet can't exceed ${state.settings.maxPersonalBet}.`}
+                </p>
+              ) : null}
+            </div>
           )}
         </div>
       </Panel>
 
       <div className="mt-6 flex justify-end fade-up">
-        <GoldButton onClick={finish}>Confirm Bets &amp; Arrange Cards</GoldButton>
+        <GoldButton onClick={finish} disabled={betsInvalid}>
+          Confirm Bets &amp; Arrange Cards
+        </GoldButton>
       </div>
     </div>
   );

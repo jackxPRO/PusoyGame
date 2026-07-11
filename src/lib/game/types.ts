@@ -85,6 +85,8 @@ export interface HostSettings {
   bankerRotation: BankerRotation;
   minPotBet: number;
   maxPotBet: number | null;
+  /** Higher mandatory pot each player must bet in the first round only. */
+  mandatoryPot: number;
   minPersonalBet: number;
   maxPersonalBet: number | null;
   scoopBonus: boolean;
@@ -106,6 +108,16 @@ export interface HostSettings {
   roundTimerSeconds: number;
 }
 
+/**
+ * The first-round pot is a higher mandatory ante; every later round uses the
+ * normal progressive minimum. Returns the minimum pot bet for a given round.
+ */
+export function effectiveMinPot(settings: HostSettings, roundIndex: number): number {
+  const mandatory =
+    typeof settings.mandatoryPot === "number" ? settings.mandatoryPot : settings.minPotBet;
+  return roundIndex <= 1 ? Math.max(mandatory, settings.minPotBet) : settings.minPotBet;
+}
+
 export function defaultSettings(): HostSettings {
   const enabledSpecials = Object.fromEntries(
     DEFAULT_SPECIAL_ORDER.map((id) => [id, true]),
@@ -120,6 +132,7 @@ export function defaultSettings(): HostSettings {
     bankerRotation: "fixed",
     minPotBet: 10,
     maxPotBet: null,
+    mandatoryPot: 20,
     minPersonalBet: 10,
     maxPersonalBet: null,
     scoopBonus: true,

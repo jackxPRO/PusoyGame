@@ -15,6 +15,7 @@ import {
   defaultSettings,
   detectSpecials,
   drawForBanker,
+  effectiveMinPot,
   nextBankerSeat,
   resolveRound,
   type Arrangement,
@@ -127,12 +128,12 @@ function clampBet(value: number, min: number, max: number | null): number {
   return v;
 }
 
-function botBets(settings: HostSettings): SeatBets {
+function botBets(settings: HostSettings, roundIndex: number): SeatBets {
   const enabledSide = (Object.keys(settings.enabledSideBets) as SideBetId[]).filter(
     (id) => settings.enabledSideBets[id],
   );
   return {
-    potBet: settings.minPotBet,
+    potBet: effectiveMinPot(settings, roundIndex),
     personalBet: settings.minPersonalBet,
     sideBets: enabledSide,
   };
@@ -140,7 +141,8 @@ function botBets(settings: HostSettings): SeatBets {
 
 function startRound(state: GameState): GameState {
   const hands = deal(SEAT_COUNT);
-  const bets = state.players.map(() => botBets(state.settings));
+  const roundIndex = state.roundCounter + 1;
+  const bets = state.players.map(() => botBets(state.settings, roundIndex));
   const arrangements = hands.map((h) => autoArrange(h, state.settings.suitRanking));
   const declared: (SpecialHandId | null)[] = hands.map((h, seat) =>
     seat === HUMAN_SEAT ? null : bestSpecial(h, state.settings),
@@ -313,8 +315,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [state.round, state.settings]);
 
   const clampPotBet = useCallback(
-    (v: number) => clampBet(v, state.settings.minPotBet, state.settings.maxPotBet),
-    [state.settings.minPotBet, state.settings.maxPotBet],
+    (v: number) =>
+      clampBet(
+        v,
+        effectiveMinPot(state.settings, state.round?.index ?? 1),
+        state.settings.maxPotBet,
+      ),
+    [state.settings, state.round?.index],
   );
   const clampPersonalBet = useCallback(
     (v: number) => clampBet(v, state.settings.minPersonalBet, state.settings.maxPersonalBet),

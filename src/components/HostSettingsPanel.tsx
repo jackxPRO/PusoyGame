@@ -65,6 +65,12 @@ export function HostSettingsPanel({
         <SectionTitle>Betting Limits</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
+            label="First-Round Mandatory Pot"
+            value={settings.mandatoryPot}
+            min={0}
+            onChange={(v) => onChange({ mandatoryPot: v ?? 0 })}
+          />
+          <NumberField
             label="Min Progressive Pot"
             value={settings.minPotBet}
             min={0}
