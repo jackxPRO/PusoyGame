@@ -254,16 +254,10 @@ export function ResultsPanel() {
             });
           } else if (match) {
             lines.push({
-              label: "Hand result (vs banker)",
+              label: `Hand result (vs banker) \u00b7 ${
+                match.bankerWinsOverall ? "lost" : "won"
+              } ${match.challengerRowWins}/3 lines`,
               value: -match.personalDelta,
-              sub: [
-                {
-                  label: `${match.bankerWinsOverall ? "lost" : "won"} ${
-                    match.challengerRowWins
-                  }/3 lines`,
-                  value: -match.personalDelta,
-                },
-              ],
             });
           }
 
