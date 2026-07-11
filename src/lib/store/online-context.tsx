@@ -289,6 +289,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const lastRoundIdRef = useRef<string | null>(null);
   // Guards against overlapping room-state loads (realtime bursts + polling).
   const loadingRef = useRef(false);
+  const loadStartRef = useRef(0);
   const lastHeartbeatRef = useRef(0);
   // Latest room/players snapshot for the polling supervisor (avoids resetting
   // the interval on every state change).
@@ -417,9 +418,12 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
   const loadRoomState = useCallback(async (roomId: string) => {
     // Skip if a load is already in flight so bursts of realtime events (and the
-    // polling fallback) can't stack up dozens of overlapping fetches.
-    if (loadingRef.current) return;
+    // polling fallback) can't stack up dozens of overlapping fetches. A stuck
+    // fetch can't block forever: after 6s the lock is treated as stale so the
+    // next poll always recovers (no "loading until refresh").
+    if (loadingRef.current && Date.now() - loadStartRef.current < 6000) return;
     loadingRef.current = true;
+    loadStartRef.current = Date.now();
     try {
       const supabase = getSupabase();
       const [{ data: roomData }, { data: playerData }, { data: roundData }] = await Promise.all([

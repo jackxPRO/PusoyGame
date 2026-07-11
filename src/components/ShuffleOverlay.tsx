@@ -25,17 +25,15 @@ export function ShuffleOverlay() {
     // Only animate on a genuine new deal (the round number went up).
     if (roundIndex <= prev.current) return;
     prev.current = roundIndex;
-    const raf = requestAnimationFrame(() => setShow(true));
-    return () => cancelAnimationFrame(raf);
+    // Deferred timers (lint-safe, and unlike requestAnimationFrame they still
+    // fire in a background tab) guarantee the overlay always clears itself.
+    const on = setTimeout(() => setShow(true), 0);
+    const off = setTimeout(() => setShow(false), 1100);
+    return () => {
+      clearTimeout(on);
+      clearTimeout(off);
+    };
   }, [roundIndex]);
-
-  // Self-clearing safety net: whenever the overlay is shown, force it back off
-  // shortly after so it can never stay stuck covering the screen.
-  useEffect(() => {
-    if (!show) return;
-    const hide = setTimeout(() => setShow(false), 1100);
-    return () => clearTimeout(hide);
-  }, [show]);
 
   if (!show) return null;
 

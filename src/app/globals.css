@@ -147,6 +147,8 @@ body[data-bg="gold"] {
   background: rgba(3, 5, 10, 0.72);
   backdrop-filter: blur(3px);
   animation: fadeUp 0.2s ease both;
+  /* Purely cosmetic — never block clicks even if it lingers a moment. */
+  pointer-events: none;
 }
 .shuffle-stack {
   position: relative;
