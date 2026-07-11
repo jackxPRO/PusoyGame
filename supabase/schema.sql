@@ -17,6 +17,8 @@ create table if not exists public.rooms (
   pot         integer not null default 0,     -- progressive pot carry-over
   side_bet_pots jsonb not null default '{}'::jsonb, -- per-side-bet accumulated pots
   banker_seat smallint not null default 0,
+  host_seat   smallint not null default 0,    -- seat currently holding host role (migrates)
+  paused      boolean not null default false, -- host paused the game between rounds
   round_no    integer not null default 0,
   created_at  timestamptz not null default now()
 );
@@ -26,6 +28,8 @@ alter table public.rooms
   add column if not exists side_bet_pots jsonb not null default '{}'::jsonb;
 alter table public.rooms add column if not exists host_name text;
 alter table public.rooms add column if not exists password text;
+alter table public.rooms add column if not exists host_seat smallint not null default 0;
+alter table public.rooms add column if not exists paused boolean not null default false;
 
 -- Up to four seats per room. `seat` 0..3.
 create table if not exists public.room_players (
@@ -37,8 +41,16 @@ create table if not exists public.room_players (
   chips      integer not null default 1000,
   ready      boolean not null default false,
   connected  boolean not null default true,
-  -- true = joined mid-game; sits out until the pot is scooped, then activates.
+  -- true = seated player timed out; rejoins (same seat + chips) next round.
   pending    boolean not null default false,
+  -- true = brand-new joiner in the waiting queue; joins after the next scoop.
+  queued     boolean not null default false,
+  -- FIFO order for the waiting queue.
+  queued_at  timestamptz,
+  -- true = eliminated (zero-balance loss or host-removed); seat is vacant.
+  eliminated boolean not null default false,
+  -- heartbeat: last time the client was seen alive (reconnect-timer source).
+  last_seen  timestamptz not null default now(),
   -- when the player quit/disconnected; used for the rejoin grace window.
   disconnected_at timestamptz,
   created_at timestamptz not null default now(),
@@ -49,6 +61,10 @@ create table if not exists public.room_players (
 alter table public.room_players add column if not exists account_id uuid;
 alter table public.room_players add column if not exists pending boolean not null default false;
 alter table public.room_players add column if not exists disconnected_at timestamptz;
+alter table public.room_players add column if not exists queued boolean not null default false;
+alter table public.room_players add column if not exists queued_at timestamptz;
+alter table public.room_players add column if not exists eliminated boolean not null default false;
+alter table public.room_players add column if not exists last_seen timestamptz not null default now();
 
 -- One row per dealt round. `hands` holds the private deal (server-side).
 create table if not exists public.rounds (
@@ -91,11 +107,22 @@ create table if not exists public.round_results (
 );
 
 -- Realtime: broadcast lobby, round and move changes to subscribed clients.
-alter publication supabase_realtime add table public.rooms;
-alter publication supabase_realtime add table public.room_players;
-alter publication supabase_realtime add table public.rounds;
-alter publication supabase_realtime add table public.round_moves;
-alter publication supabase_realtime add table public.round_results;
+-- Idempotent: only add a table to the publication if it isn't already a member
+-- (re-running `alter publication ... add table` otherwise errors 42710).
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'rooms', 'room_players', 'rounds', 'round_moves', 'round_results'
+  ] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
 
 -- Row Level Security.
 -- This is a nickname-only, no-account game: access is via the room code, and
@@ -167,7 +194,15 @@ drop policy if exists app_config_anon_all on public.app_config;
 create policy app_config_anon_all on public.app_config
   for all to anon, authenticated using (true) with check (true);
 
-alter publication supabase_realtime add table public.app_config;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'app_config'
+  ) then
+    alter publication supabase_realtime add table public.app_config;
+  end if;
+end $$;
 
 -- Storage bucket for admin-uploaded background images (public read).
 insert into storage.buckets (id, name, public)

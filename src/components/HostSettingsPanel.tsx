@@ -59,6 +59,13 @@ export function HostSettingsPanel({
           step={5}
           onChange={(v) => onChange({ roundTimerSeconds: v ?? 0 })}
         />
+        <NumberField
+          label="Reconnect Timer (seconds)"
+          value={settings.reconnectSeconds ?? 60}
+          min={10}
+          step={5}
+          onChange={(v) => onChange({ reconnectSeconds: v ?? 60 })}
+        />
       </Panel>
 
       <Panel>

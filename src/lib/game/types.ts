@@ -106,6 +106,9 @@ export interface HostSettings {
   sideBetStakes: Record<SideBetId, number>;
   /** Round timer in seconds (0 = no timer). */
   roundTimerSeconds: number;
+  /** How long a disconnected player's seat is reserved before they become a
+   * spectator / the host role migrates (Rule 11 & 12). */
+  reconnectSeconds: number;
 }
 
 /**
@@ -116,6 +119,14 @@ export function potBetForRound(settings: HostSettings, roundIndex: number): numb
   const initial =
     typeof settings.mandatoryPot === "number" ? settings.mandatoryPot : settings.minPotBet;
   return roundIndex <= 1 ? initial : settings.minPotBet;
+}
+
+/**
+ * The minimum bet a player must be able to cover to keep betting. A player whose
+ * balance falls below this enters Zero Balance Status (Rule 15).
+ */
+export function minRequiredBet(settings: HostSettings): number {
+  return Math.min(settings.minPotBet, settings.minPersonalBet);
 }
 
 export function defaultSettings(): HostSettings {
@@ -146,6 +157,7 @@ export function defaultSettings(): HostSettings {
     enabledSideBets,
     sideBetStakes,
     roundTimerSeconds: 60,
+    reconnectSeconds: 60,
   };
 }
 

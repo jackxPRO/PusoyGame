@@ -18,6 +18,7 @@ import {
   nextBankerSeat,
   potBetForRound,
   resolveRound,
+  minRequiredBet,
   type Arrangement,
   type Card,
   type HostSettings,
@@ -198,12 +199,16 @@ function reducer(state: GameState, action: Action): GameState {
     case "SUBMIT": {
       if (!state.round) return state;
       const r = state.round;
+      // Rule 15: suspend betting for everyone if any player is at zero balance.
+      const zeroThreshold = minRequiredBet(state.settings);
+      const bettingSuspended = state.players.some((p) => p.chips < zeroThreshold);
       const result = resolveRound({
         settings: state.settings,
         bankerId: state.players[r.bankerSeat].id,
         pot: { amount: state.pot },
         sideBetStake: state.sideBetStake,
         sideBetCarry: state.sideBetCarry,
+        bettingSuspended,
         players: state.players.map((p) => ({
           id: p.id,
           dealt: r.hands[p.seat],
@@ -212,12 +217,13 @@ function reducer(state: GameState, action: Action): GameState {
           personalBet: r.bets[p.seat].personalBet,
           potBet: r.bets[p.seat].potBet,
           sideBets: r.bets[p.seat].sideBets,
+          chips: p.chips,
         })),
       });
 
       const players = state.players.map((p) => ({
         ...p,
-        chips: p.chips + (result.chipDeltas[p.id] ?? 0),
+        chips: Math.max(0, p.chips + (result.chipDeltas[p.id] ?? 0)),
       }));
 
       const history: HistoryEntry = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SIDE_BET_LABELS, potBetForRound, sortByRankDesc, type SideBetId } from "@/lib/game";
+import { SIDE_BET_LABELS, minRequiredBet, potBetForRound, sortByRankDesc, type SideBetId } from "@/lib/game";
 import { useGame } from "@/lib/store/game-context";
 import { PlayingCard } from "./PlayingCard";
 import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
@@ -18,6 +18,12 @@ export function BettingPanel() {
   // first round, progressive pot afterwards); players cannot change it.
   const potBet = potBetForRound(state.settings, round.index);
   const isFirstRound = round.index <= 1;
+
+  // Rule 15 table effect: with any player at zero balance, betting is suspended
+  // for everyone — the round plays out as normal Pusoy with no chips wagered.
+  const bettingSuspended = state.players.some(
+    (p) => p.chips < minRequiredBet(state.settings),
+  );
 
   const [step, setStep] = useState<"main" | "side">("side");
   const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
@@ -78,6 +84,25 @@ export function BettingPanel() {
       </div>
     </header>
   );
+
+  // --- Betting suspended (Rule 15): skip all wagers this round -------------
+  if (bettingSuspended) {
+    return (
+      <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+        {header}
+        <Panel className="fade-up text-center">
+          <h3 className="mb-1 text-lg font-black text-rose-300">Betting Suspended</h3>
+          <p className="mx-auto mb-4 max-w-md text-sm text-slate-400">
+            A player is in Zero Balance Status. No pot contributions, personal bets or side bets
+            this round — everyone plays a normal hand until the pot is won by a Banker.
+          </p>
+          <GoldButton onClick={() => placeBets({ potBet: 0, personalBet: 0, sideBets: [] })}>
+            See Cards &amp; Arrange
+          </GoldButton>
+        </Panel>
+      </div>
+    );
+  }
 
   // --- Step 1: Side Bets FIRST (blind — before cards are shown) -----------
   if (step === "side") {
