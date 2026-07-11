@@ -107,7 +107,7 @@ export interface HostSettings {
   /** Round timer in seconds (0 = no timer). */
   roundTimerSeconds: number;
   /** How long a disconnected player's seat is reserved before they become a
-   * spectator / the host role migrates (Rule 11 & 12). */
+   * host role migrates after a disconnect (Rule 12). */
   reconnectSeconds: number;
 }
 

@@ -226,8 +226,6 @@ export interface OnlineContextValue {
   waiting: boolean;
   /** I joined mid-game and must wait for a scoop before I can play. */
   isPending: boolean;
-  /** I timed out and am spectating until the next round (Rule 11). */
-  isSpectator: boolean;
   /** I was eliminated (zero-balance loss) — my seat is vacant (Rule 15). */
   isEliminated: boolean;
   /** The host paused the game between rounds (Rule 12). */
@@ -515,7 +513,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session || !room || !round || result) return;
     if (room.host_seat !== session.mySeat) return; // only the current host resolves
-    // A player who timed out (spectator/pending) or is eliminated is not
+    // A player waiting to join the next deal or an eliminated player is not
     // part of the current hand, so the round resolves with whoever is left.
     const activePlayers = players.filter(
       (p) => !p.pending && !p.eliminated && p.connected,
@@ -633,7 +631,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
   // Polling fallback: converge room state on a timer so a dropped realtime
   // event can never leave a client stuck (e.g. showing others as "deciding").
-  // Also drives the reconnect timer, host migration and spectator conversion.
+  // Also drives host migration when the current host disconnects.
   useEffect(() => {
     if (!session) return;
     const mySeat = session.mySeat;
@@ -685,25 +683,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Rule 11 — the current host converts timed-out active participants into
-      // spectators so the round can resolve; they rejoin next round (seat kept).
-      if (r.host_seat === mySeat && r.status === "in_progress") {
-        for (const p of ps) {
-          if (p.seat === mySeat) continue;
-          const active = p.connected && !p.pending && !p.eliminated;
-          if (active && staleFor(p) > reconnectMs) {
-            void supabase
-              .from("room_players")
-              .update({
-                connected: false,
-                pending: true,
-                disconnected_at: new Date().toISOString(),
-              })
-              .eq("id", p.id)
-              .then(() => undefined);
-          }
-        }
-      }
     }, 2000);
     return () => clearInterval(id);
   }, [session, loadRoomState]);
@@ -917,8 +896,8 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     }
     const supabase = getSupabase();
     // Everyone currently connected and not eliminated plays the new
-    // round. Spectators (timed-out players marked pending) are dealt back in as
-    // the next round starts (Rule 11).
+    // round. Players who joined during the current hand are dealt in at the
+    // next round start.
     const participants = players
       .filter((p) => p.connected && !p.eliminated)
       .sort((a, b) => a.seat - b.seat);
@@ -1150,7 +1129,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const waiting = effectiveSubmitted && !result;
   const myRow = session ? players.find((p) => p.seat === session.mySeat) ?? null : null;
   const isPending = Boolean(myRow?.pending);
-  const isSpectator = Boolean(myRow?.pending);
   const isEliminated = Boolean(myRow?.eliminated);
   const paused = Boolean(room?.paused);
   const hostSeat = room?.host_seat ?? 0;
@@ -1316,7 +1294,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     started,
     waiting,
     isPending,
-    isSpectator,
     isEliminated,
     paused,
     zeroBalanceActive,

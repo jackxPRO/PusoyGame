@@ -48,7 +48,7 @@ function OnlineGame() {
   const {
     waiting,
     session,
-    isSpectator,
+    isPending,
     isEliminated,
     paused,
     zeroBalanceActive,
@@ -153,10 +153,10 @@ function OnlineGame() {
           "Eliminated",
           "You ran out of chips and another banker won the pot. You're now spectating this match.",
         )
-      ) : isSpectator ? (
+      ) : isPending ? (
         info(
-          "Spectating",
-          "Your reconnect timer expired, so you're sitting out this round. You'll be dealt back in when the next round starts.",
+          "Waiting for next round",
+          "This hand is already underway. You'll be dealt in when the next round starts.",
         )
       ) : waiting ? (
         <WaitingScreen />
