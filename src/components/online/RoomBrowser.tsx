@@ -14,6 +14,10 @@ export function RoomBrowser() {
   const [joinTarget, setJoinTarget] = useState<RoomSummary | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
 
+  // A player needs at least ₱50 to join or host a room.
+  const MIN_BALANCE = 50;
+  const canPlay = (account?.balance ?? 0) >= MIN_BALANCE;
+
   useEffect(() => {
     void refreshRooms();
     const id = setInterval(() => void refreshRooms(), 3000);
@@ -45,10 +49,19 @@ export function RoomBrowser() {
           </p>
         </div>
         <div className="flex gap-2">
-          <GoldButton onClick={() => setShowCreate((s) => !s)}>Create Room</GoldButton>
+          <GoldButton onClick={() => setShowCreate((s) => !s)} disabled={!canPlay}>
+            Create Room
+          </GoldButton>
           <GhostButton onClick={logout}>Log out</GhostButton>
         </div>
       </header>
+
+      {!canPlay ? (
+        <p className="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+          You need at least ₱{MIN_BALANCE} to join or host a room. Ask an admin to top up your
+          balance.
+        </p>
+      ) : null}
 
       {error ? <p className="mb-4 text-sm text-rose-400">{error}</p> : null}
 
@@ -132,7 +145,7 @@ export function RoomBrowser() {
                   <GhostButton
                     size="sm"
                     onClick={() => onJoin(room)}
-                    disabled={connecting || room.players >= 4}
+                    disabled={connecting || room.players >= 4 || !canPlay}
                   >
                     {room.players >= 4
                       ? "Full"

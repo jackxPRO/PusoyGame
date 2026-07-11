@@ -123,6 +123,8 @@ const DEFAULT_RECONNECT_SECONDS = 60;
 // A player is treated as disconnected once their heartbeat is this stale. Kept
 // well above the ~20s heartbeat interval so a live player is never misflagged.
 const HEARTBEAT_STALE_MS = 45 * 1000;
+// Minimum account balance required to join or host a room.
+const MIN_JOIN_BALANCE = 50;
 const STORAGE_KEY = "pusoy_session";
 const ACCOUNT_KEY = "pusoy_account_id";
 
@@ -788,6 +790,10 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const createRoom = useCallback(
     async (settings: HostSettings, password: string | null) => {
       if (!account) return;
+      if (account.balance < MIN_JOIN_BALANCE) {
+        setError(`You need at least \u20b1${MIN_JOIN_BALANCE} to host a room.`);
+        return;
+      }
       setConnecting(true);
       setError(null);
       try {
@@ -834,6 +840,10 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const joinRoom = useCallback(
     async (roomId: string, password: string) => {
       if (!account) return;
+      if (account.balance < MIN_JOIN_BALANCE) {
+        setError(`You need at least \u20b1${MIN_JOIN_BALANCE} to join a room.`);
+        return;
+      }
       setConnecting(true);
       setError(null);
       try {
