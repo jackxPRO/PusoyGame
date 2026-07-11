@@ -43,10 +43,6 @@ create table if not exists public.room_players (
   connected  boolean not null default true,
   -- true = seated player timed out; rejoins (same seat + chips) next round.
   pending    boolean not null default false,
-  -- true = brand-new joiner in the waiting queue; joins after the next scoop.
-  queued     boolean not null default false,
-  -- FIFO order for the waiting queue.
-  queued_at  timestamptz,
   -- true = eliminated (zero-balance loss or host-removed); seat is vacant.
   eliminated boolean not null default false,
   -- heartbeat: last time the client was seen alive (reconnect-timer source).
@@ -61,10 +57,12 @@ create table if not exists public.room_players (
 alter table public.room_players add column if not exists account_id uuid;
 alter table public.room_players add column if not exists pending boolean not null default false;
 alter table public.room_players add column if not exists disconnected_at timestamptz;
-alter table public.room_players add column if not exists queued boolean not null default false;
-alter table public.room_players add column if not exists queued_at timestamptz;
 alter table public.room_players add column if not exists eliminated boolean not null default false;
 alter table public.room_players add column if not exists last_seen timestamptz not null default now();
+-- Queueing is no longer part of the room flow. Existing installations can
+-- safely remove these legacy columns by re-running this schema.
+alter table public.room_players drop column if exists queued_at;
+alter table public.room_players drop column if exists queued;
 
 -- One row per dealt round. `hands` holds the private deal (server-side).
 create table if not exists public.rounds (

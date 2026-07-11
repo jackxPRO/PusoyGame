@@ -49,7 +49,6 @@ function OnlineGame() {
     waiting,
     session,
     isSpectator,
-    isQueued,
     isEliminated,
     paused,
     zeroBalanceActive,
@@ -153,11 +152,6 @@ function OnlineGame() {
         info(
           "Eliminated",
           "You ran out of chips and another banker won the pot. You're now spectating this match.",
-        )
-      ) : isQueued ? (
-        info(
-          "Waiting Queue",
-          "You'll join the match with a fresh balance right after the pot is next scooped. Enjoy the show.",
         )
       ) : isSpectator ? (
         info(
