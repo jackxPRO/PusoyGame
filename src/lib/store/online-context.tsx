@@ -442,7 +442,12 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
       // Keep the last good room if a read comes back empty (transient) instead
       // of blanking the screen to a stuck "Connecting to room…" state.
-      if (roomData) setRoom(roomData as RoomRow);
+      // Normalize host_seat (older rooms may lack the column) so every host
+      // check works and the settings panel stays editable for the host.
+      if (roomData) {
+        const r = roomData as RoomRow;
+        setRoom({ ...r, host_seat: r.host_seat ?? 0 });
+      }
       if (playerData) setPlayers(playerData as PlayerRow[]);
 
       const currentRound = (roundData as RoundRow) ?? null;
@@ -810,6 +815,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
             settings,
             pot: 0,
             banker_seat: bankerSeat,
+            host_seat: 0,
             round_no: 0,
           })
           .select("*")
@@ -920,7 +926,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
             }),
           );
         }
-        const s: Session = { roomId: roomData.id, code: roomData.code, mySeat: seat, isHost: seat === roomData.host_seat };
+        const s: Session = { roomId: roomData.id, code: roomData.code, mySeat: seat, isHost: seat === (roomData.host_seat ?? 0) };
         setSession(s);
         saveSession(s);
         subscribe(roomData.id);

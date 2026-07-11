@@ -8,11 +8,11 @@ import { HostSettingsPanel } from "../HostSettingsPanel";
 import { GhostButton, GoldButton, Panel } from "../ui";
 
 export function OnlineLobby() {
-  const { session, lobbyPlayers, toggleReady, startGame, leave, error } = useOnline();
+  const { session, lobbyPlayers, toggleReady, startGame, leave, error, hostSeat } = useOnline();
   const { state, updateSettings } = useGame();
   const [showSettings, setShowSettings] = useState(false);
 
-  const isHost = session?.isHost ?? false;
+  const isHost = session?.mySeat === hostSeat;
   const me = lobbyPlayers.find((p) => p.seat === session?.mySeat);
   const enough = lobbyPlayers.length >= 2;
   const allReady = enough && lobbyPlayers.every((p) => p.ready);
