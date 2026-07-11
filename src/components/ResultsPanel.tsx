@@ -32,6 +32,25 @@ function MiniRow({ cards, front = false }: { cards: Card[]; front?: boolean }) {
   );
 }
 
+interface CalcLine {
+  label: string;
+  value: number;
+  sub?: { label: string; value: number }[];
+}
+
+function Amount({ value }: { value: number }) {
+  return (
+    <span
+      className={
+        value > 0 ? "text-emerald-400" : value < 0 ? "text-rose-400" : "text-slate-500"
+      }
+    >
+      {value > 0 ? "+" : ""}
+      {value}
+    </span>
+  );
+}
+
 function SeatReveal({
   seat,
   nickname,
@@ -41,7 +60,9 @@ function SeatReveal({
   isBanker,
   isHuman,
   matchLine,
-  breakdown,
+  lines,
+  chipsBefore,
+  chipsAfter,
 }: {
   seat: number;
   nickname: string;
@@ -51,7 +72,9 @@ function SeatReveal({
   isBanker: boolean;
   isHuman: boolean;
   matchLine: string | null;
-  breakdown: { label: string; value: number }[];
+  lines: CalcLine[];
+  chipsBefore: number;
+  chipsAfter: number;
 }) {
   return (
     <Panel className={`fade-up ${isBanker ? "gold-border" : ""}`}>
@@ -85,23 +108,46 @@ function SeatReveal({
         <MiniRow cards={arrangement.front} front />
       </div>
       {matchLine ? <p className="mt-2 text-xs text-slate-400">{matchLine}</p> : null}
-      {breakdown.length > 0 ? (
-        <div className="mt-2 space-y-0.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
-          {breakdown.map((b) => (
-            <div key={b.label} className="flex items-center justify-between text-[0.7rem]">
-              <span className="text-slate-500">{b.label}</span>
-              <span
-                className={
-                  b.value > 0 ? "text-emerald-400" : b.value < 0 ? "text-rose-400" : "text-slate-500"
-                }
-              >
-                {b.value > 0 ? "+" : ""}
-                {b.value}
-              </span>
-            </div>
-          ))}
+
+      <div className="mt-2 rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
+        <p className="mb-1 text-[0.6rem] font-semibold uppercase tracking-wide text-slate-500">
+          Computation
+        </p>
+        {lines.length > 0 ? (
+          <div className="space-y-1">
+            {lines.map((l) => (
+              <div key={l.label}>
+                <div className="flex items-center justify-between text-[0.72rem]">
+                  <span className="text-slate-300">{l.label}</span>
+                  <Amount value={l.value} />
+                </div>
+                {l.sub?.map((s) => (
+                  <div
+                    key={s.label}
+                    className="flex items-center justify-between pl-3 text-[0.66rem] text-slate-500"
+                  >
+                    <span>{s.label}</span>
+                    <Amount value={s.value} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[0.7rem] text-slate-500">No chips moved this round.</p>
+        )}
+        <div className="mt-1.5 flex items-center justify-between border-t border-white/10 pt-1.5 text-[0.72rem] font-semibold">
+          <span className="text-slate-300">Net</span>
+          <Amount value={delta} />
         </div>
-      ) : null}
+        <div className="flex items-center justify-between text-[0.66rem] text-slate-500">
+          <span>Chips</span>
+          <span>
+            {chipsBefore} <span className="text-slate-600">&rarr;</span>{" "}
+            <span className="font-semibold text-slate-300">{chipsAfter}</span>
+          </span>
+        </div>
+      </div>
       <p className="mt-1 text-[0.65rem] text-slate-600">Seat {seat + 1}</p>
     </Panel>
   );
@@ -170,33 +216,64 @@ export function ResultsPanel() {
           }
           const declared = round.declared[p.seat];
 
-          // Transparent breakdown of the net (rows, pot ante, scoop, side bets).
+          // Detailed, itemized computation of this player's net for the round.
           const matches = result.scoring.matches;
           const scoop = result.scoring.scoop;
           const bonusEach = matches.length ? result.scoring.scoopBonusAwarded / matches.length : 0;
-          const rows = isBanker
-            ? matches.reduce((s, m) => s + m.personalDelta, 0)
-            : match
-              ? -match.personalDelta
-              : 0;
-          const scoopBonus = scoop
-            ? isBanker
-              ? result.scoring.scoopBonusAwarded
-              : -bonusEach
-            : 0;
+          const nameOf = (id: string) =>
+            state.players.find((pp) => `seat-${pp.seat}` === id)?.nickname ?? id;
+          const delta = result.chipDeltas[p.id] ?? 0;
+          const chipsAfter = p.chips;
+          const chipsBefore = chipsAfter - delta;
+
+          const lines: CalcLine[] = [];
+
+          // Personal bets from row wins/losses vs the banker.
+          if (isBanker && matches.length > 0) {
+            lines.push({
+              label: "Personal (rows vs each player)",
+              value: matches.reduce((s, m) => s + m.personalDelta, 0),
+              sub: matches.map((m) => ({
+                label: `vs ${nameOf(m.challengerId)}  ${m.bankerRowWins}:${m.challengerRowWins}`,
+                value: m.personalDelta,
+              })),
+            });
+          } else if (match) {
+            lines.push({
+              label: "Personal (rows vs banker)",
+              value: -match.personalDelta,
+              sub: [
+                {
+                  label: `rows ${match.challengerRowWins}:${match.bankerRowWins} \u00d7 bet`,
+                  value: -match.personalDelta,
+                },
+              ],
+            });
+          }
+
+          // Mandatory progressive-pot ante.
           const potAnte = -(round.bets[p.seat]?.potBet ?? 0);
-          const potWon = scoop && isBanker ? result.potAwardedAmount : 0;
-          const sideBets = result.sideBetSettlements.reduce(
-            (s, sb) => s + (sb.deltas[p.id] ?? 0),
-            0,
-          );
-          const breakdown = [
-            { label: isBanker ? "Rows (vs all)" : "Rows", value: rows },
-            { label: "Pot ante", value: potAnte },
-            { label: "Scoop bonus", value: scoopBonus },
-            { label: "Pot won", value: potWon },
-            { label: "Side bets", value: sideBets },
-          ].filter((b) => b.value !== 0);
+          if (potAnte !== 0) lines.push({ label: "Pot ante", value: potAnte });
+
+          // Scoop effects.
+          if (scoop) {
+            const bonus = isBanker ? result.scoring.scoopBonusAwarded : -bonusEach;
+            if (bonus !== 0) lines.push({ label: "Scoop bonus", value: bonus });
+            if (isBanker && result.potAwardedAmount)
+              lines.push({ label: "Progressive pot won", value: result.potAwardedAmount });
+          }
+
+          // Side bets, itemized per bet.
+          const sbSubs = result.sideBetSettlements
+            .filter((sb) => p.id in sb.deltas && sb.deltas[p.id] !== 0)
+            .map((sb) => ({ label: SIDE_BET_LABELS[sb.betId], value: sb.deltas[p.id] }));
+          if (sbSubs.length > 0) {
+            lines.push({
+              label: "Side bets",
+              value: sbSubs.reduce((s, x) => s + x.value, 0),
+              sub: sbSubs,
+            });
+          }
 
           return (
             <SeatReveal
@@ -205,11 +282,13 @@ export function ResultsPanel() {
               nickname={p.nickname}
               arrangement={round.arrangements[p.seat]}
               declaredLabel={declared ? SPECIAL_HAND_LABELS[declared] : null}
-              delta={result.chipDeltas[p.id] ?? 0}
+              delta={delta}
               isBanker={isBanker}
               isHuman={p.seat === mySeat}
               matchLine={matchLine}
-              breakdown={breakdown}
+              lines={lines}
+              chipsBefore={chipsBefore}
+              chipsAfter={chipsAfter}
             />
           );
         })}
