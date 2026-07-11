@@ -271,7 +271,7 @@ export function BettingPanel() {
           ) : (
             <div>
               <NumberField
-                label={`Personal Bet per row (min ${state.settings.minPersonalBet}${
+                label={`Personal Bet (whole hand, min ${state.settings.minPersonalBet}${
                   state.settings.maxPersonalBet ? `, max ${state.settings.maxPersonalBet}` : ""
                 })`}
                 value={personalBet}

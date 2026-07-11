@@ -86,9 +86,13 @@ export function resolveMatch(
 
   const bankerRowWins = rows.filter((r) => r.result === 1).length;
   const challengerRowWins = rows.filter((r) => r.result === -1).length;
-  const bankerWinsOverall = bankerRowWins > challengerRowWins;
+  // Whole-hand result (not per-row): a player wins the hand by taking at least
+  // two of the three lines (majority). The banker keeps the tie advantage, so
+  // the challenger must win >= 2 lines to beat the banker. Paid 1:1 on the bet.
+  const challengerWinsHand = challengerRowWins >= 2;
+  const bankerWinsOverall = !challengerWinsHand;
 
-  let personalDelta = (bankerRowWins - challengerRowWins) * challenger.personalBet;
+  let personalDelta = (bankerWinsOverall ? 1 : -1) * challenger.personalBet;
 
   // Foul penalty: fouling player pays a fixed amount to the other side.
   if (settings.foulPenalty) {

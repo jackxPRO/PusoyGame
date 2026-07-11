@@ -210,8 +210,8 @@ export function ResultsPanel() {
           const isBanker = p.seat === bankerSeat;
           let matchLine: string | null = null;
           if (match && !isBanker) {
-            matchLine = `vs Banker \u2014 rows ${match.challengerRowWins}:${match.bankerRowWins} ${
-              match.bankerWinsOverall ? "(lost)" : "(won)"
+            matchLine = `vs Banker \u2014 won ${match.challengerRowWins}/3 lines ${
+              match.bankerWinsOverall ? "(lost hand)" : "(won hand)"
             }`;
           }
           const declared = round.declared[p.seat];
@@ -228,23 +228,27 @@ export function ResultsPanel() {
 
           const lines: CalcLine[] = [];
 
-          // Personal bets from row wins/losses vs the banker.
+          // Personal bets from the whole-hand win/lose vs the banker (1:1).
           if (isBanker && matches.length > 0) {
             lines.push({
-              label: "Personal (rows vs each player)",
+              label: "Hand results (vs each player)",
               value: matches.reduce((s, m) => s + m.personalDelta, 0),
               sub: matches.map((m) => ({
-                label: `vs ${nameOf(m.challengerId)}  ${m.bankerRowWins}:${m.challengerRowWins}`,
+                label: `vs ${nameOf(m.challengerId)}  ${
+                  m.bankerWinsOverall ? "won" : "lost"
+                } (${m.bankerRowWins}/3 lines)`,
                 value: m.personalDelta,
               })),
             });
           } else if (match) {
             lines.push({
-              label: "Personal (rows vs banker)",
+              label: "Hand result (vs banker)",
               value: -match.personalDelta,
               sub: [
                 {
-                  label: `rows ${match.challengerRowWins}:${match.bankerRowWins} \u00d7 bet`,
+                  label: `${match.bankerWinsOverall ? "lost" : "won"} (${
+                    match.challengerRowWins
+                  }/3 lines) \u2014 1:1`,
                   value: -match.personalDelta,
                 },
               ],
