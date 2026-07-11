@@ -15,8 +15,8 @@ import {
   defaultSettings,
   detectSpecials,
   drawForBanker,
-  effectiveMinPot,
   nextBankerSeat,
+  potBetForRound,
   resolveRound,
   type Arrangement,
   type Card,
@@ -133,7 +133,7 @@ function botBets(settings: HostSettings, roundIndex: number): SeatBets {
     (id) => settings.enabledSideBets[id],
   );
   return {
-    potBet: effectiveMinPot(settings, roundIndex),
+    potBet: potBetForRound(settings, roundIndex),
     personalBet: settings.minPersonalBet,
     sideBets: enabledSide,
   };
@@ -318,7 +318,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     (v: number) =>
       clampBet(
         v,
-        effectiveMinPot(state.settings, state.round?.index ?? 1),
+        potBetForRound(state.settings, state.round?.index ?? 1),
         state.settings.maxPotBet,
       ),
     [state.settings, state.round?.index],

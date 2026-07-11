@@ -15,7 +15,7 @@ import {
   autoArrange,
   deal,
   detectSpecials,
-  effectiveMinPot,
+  potBetForRound,
   resolveRound,
   type Arrangement,
   type Card,
@@ -836,7 +836,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     (v: number) => {
       const s = effectiveSettings;
       if (!s) return v;
-      let x = Math.max(effectiveMinPot(s, round?.round_no ?? 1), Math.round(v));
+      let x = Math.max(potBetForRound(s, round?.round_no ?? 1), Math.round(v));
       if (s.maxPotBet !== null) x = Math.min(s.maxPotBet, x);
       return x;
     },

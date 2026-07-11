@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SIDE_BET_LABELS, effectiveMinPot, sortByRankDesc, type SideBetId } from "@/lib/game";
+import { SIDE_BET_LABELS, potBetForRound, sortByRankDesc, type SideBetId } from "@/lib/game";
 import { useGame } from "@/lib/store/game-context";
 import { PlayingCard } from "./PlayingCard";
 import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
@@ -9,17 +9,17 @@ import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
 const ALL_SIDE_BETS = Object.keys(SIDE_BET_LABELS) as SideBetId[];
 
 export function BettingPanel() {
-  const { state, mySeat, isHost, placeBets, updateSettings, clampPotBet, clampPersonalBet } =
-    useGame();
+  const { state, mySeat, isHost, placeBets, updateSettings, clampPersonalBet } = useGame();
   const round = state.round!;
   const isBanker = round.bankerSeat === mySeat;
   const myId = `seat-${mySeat}`;
 
-  const minPot = effectiveMinPot(state.settings, round.index);
+  // The pot each player contributes is fixed by the host (initial bet in the
+  // first round, progressive pot afterwards); players cannot change it.
+  const potBet = potBetForRound(state.settings, round.index);
   const isFirstRound = round.index <= 1;
 
   const [step, setStep] = useState<"main" | "side">("side");
-  const [potBet, setPotBet] = useState<number | null>(minPot);
   const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
   const [joined, setJoined] = useState<Record<SideBetId, boolean>>(
     () => Object.fromEntries(ALL_SIDE_BETS.map((id) => [id, false])) as Record<SideBetId, boolean>,
@@ -40,22 +40,18 @@ export function BettingPanel() {
   const setStake = (id: SideBetId, v: number) =>
     updateSettings({ sideBetStakes: { ...state.settings.sideBetStakes, [id]: Math.max(0, v) } });
 
-  const potInvalid =
-    potBet == null ||
-    potBet < minPot ||
-    (state.settings.maxPotBet != null && potBet > state.settings.maxPotBet);
   const personalInvalid =
     !isBanker &&
     (personalBet == null ||
       personalBet < state.settings.minPersonalBet ||
       (state.settings.maxPersonalBet != null && personalBet > state.settings.maxPersonalBet));
-  const betsInvalid = potInvalid || personalInvalid;
+  const betsInvalid = personalInvalid;
 
   const finish = () => {
-    if (betsInvalid || potBet == null) return;
+    if (betsInvalid) return;
     const sideBets = enabledSide.filter((id) => joined[id]);
     placeBets({
-      potBet: clampPotBet(potBet),
+      potBet,
       personalBet: isBanker ? 0 : clampPersonalBet(personalBet ?? 0),
       sideBets,
     });
@@ -228,30 +224,20 @@ export function BettingPanel() {
         <SectionTitle>Mandatory & Personal Bets</SectionTitle>
         {isFirstRound ? (
           <p className="mb-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">
-            First round mandatory pot: everyone must bet at least {minPot}. Later rounds use the
-            progressive minimum ({state.settings.minPotBet}).
+            First round uses the host&apos;s initial bet. Later rounds use the progressive pot.
           </p>
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <NumberField
-              label={`${isFirstRound ? "Mandatory Pot" : "Progressive Pot"} (min ${minPot}${
-                state.settings.maxPotBet ? `, max ${state.settings.maxPotBet}` : ""
-              })`}
-              value={potBet}
-              min={minPot}
-              placeholder={`min ${minPot}`}
-              onChange={(v) => setPotBet(v)}
-            />
-            {potInvalid ? (
-              <p className="mt-1 text-xs text-rose-400">
-                {potBet == null
-                  ? `Enter a pot bet of at least ${minPot}.`
-                  : potBet < minPot
-                    ? `Pot bet must be at least ${minPot}.`
-                    : `Pot bet can't exceed ${state.settings.maxPotBet}.`}
-              </p>
-            ) : null}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-slate-400">
+              {isFirstRound ? "Initial Bet (set by host)" : "Progressive Pot (set by host)"}
+            </span>
+            <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+              <span className="text-sm font-bold text-gold">{potBet}</span>
+              <span className="text-[0.7rem] uppercase tracking-widest text-slate-500">
+                fixed
+              </span>
+            </div>
           </div>
           {isBanker ? (
             <p className="flex items-center rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">

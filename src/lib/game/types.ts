@@ -109,13 +109,13 @@ export interface HostSettings {
 }
 
 /**
- * The first-round pot is a higher mandatory ante; every later round uses the
- * normal progressive minimum. Returns the minimum pot bet for a given round.
+ * The pot each player contributes is fixed by the host: a higher initial bet in
+ * the first round, then the progressive pot for every later round.
  */
-export function effectiveMinPot(settings: HostSettings, roundIndex: number): number {
-  const mandatory =
+export function potBetForRound(settings: HostSettings, roundIndex: number): number {
+  const initial =
     typeof settings.mandatoryPot === "number" ? settings.mandatoryPot : settings.minPotBet;
-  return roundIndex <= 1 ? Math.max(mandatory, settings.minPotBet) : settings.minPotBet;
+  return roundIndex <= 1 ? initial : settings.minPotBet;
 }
 
 export function defaultSettings(): HostSettings {
