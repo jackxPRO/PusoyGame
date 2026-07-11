@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { SIDE_BET_LABELS, sortByRankDesc, type SideBetId } from "@/lib/game";
 import { useGame } from "@/lib/store/game-context";
 import { PlayingCard } from "./PlayingCard";
-import { GhostButton, GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
+import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
 
 const ALL_SIDE_BETS = Object.keys(SIDE_BET_LABELS) as SideBetId[];
 
@@ -15,7 +15,7 @@ export function BettingPanel() {
   const isBanker = round.bankerSeat === mySeat;
   const myId = `seat-${mySeat}`;
 
-  const [step, setStep] = useState<"main" | "side">("main");
+  const [step, setStep] = useState<"main" | "side">("side");
   const [potBet, setPotBet] = useState(state.settings.minPotBet);
   const [personalBet, setPersonalBet] = useState(state.settings.minPersonalBet);
   const [joined, setJoined] = useState<Record<SideBetId, boolean>>(
@@ -68,68 +68,134 @@ export function BettingPanel() {
     </header>
   );
 
-  // --- Step 2: dedicated Side Bets location -------------------------------
+  // --- Step 1: Side Bets FIRST (blind — before cards are shown) -----------
   if (step === "side") {
     const joinedCount = enabledSide.filter((id) => joined[id]).length;
     return (
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         {header}
+        <p className="mb-4 rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-sky-300 fade-up">
+          Decide your side bets now — before you see your cards. They lock once you continue.
+        </p>
+
+        {isHost ? (
+          <Panel className="mb-4 fade-up">
+            <SectionTitle>Host · Side Bets on Offer</SectionTitle>
+            <p className="mb-2 text-xs text-slate-500">
+              Choose which side bets are available this round and their antes.
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {ALL_SIDE_BETS.map((id) => (
+                <div key={id} className="rounded-lg border border-white/10 bg-white/5 px-3 pb-2">
+                  <Toggle
+                    label={SIDE_BET_LABELS[id]}
+                    checked={state.settings.enabledSideBets[id]}
+                    onChange={(v) => toggleOffer(id, v)}
+                  />
+                  {state.sideBetCarry[id]?.pot ? (
+                    <p className="pb-1 text-xs text-emerald-300">
+                      Current pot: {state.sideBetCarry[id]!.pot}
+                    </p>
+                  ) : null}
+                  {state.settings.enabledSideBets[id] ? (
+                    <NumberField
+                      label="Ante per player"
+                      value={state.settings.sideBetStakes[id]}
+                      min={0}
+                      onChange={(v) => setStake(id, v ?? 0)}
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </Panel>
+        ) : null}
+
         <Panel className="mb-4 fade-up">
           <SectionTitle>Optional Side Bets</SectionTitle>
-          <p className="mb-3 text-xs text-slate-500">
-            Join or decline each side bet individually. Winners split the pot; ties split equally.
-          </p>
-          <div className="grid gap-2">
-            {enabledSide.map((id) => {
-              const carry = state.sideBetCarry[id];
-              const carriedIn = Boolean(carry?.players?.includes(myId));
-              return (
-                <div
-                  key={id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-                >
-                  <span className="text-sm text-slate-200">
-                    {SIDE_BET_LABELS[id]}
-                    <span className="ml-2 text-xs text-gold">
-                      ante {state.settings.sideBetStakes[id]}
-                    </span>
-                    {carry?.pot ? (
-                      <span className="ml-2 text-xs text-emerald-300">carry {carry.pot}</span>
-                    ) : null}
-                    {carriedIn ? (
-                      <span className="ml-2 text-xs text-sky-300">
-                        you&apos;re in — can win even if you decline
-                      </span>
-                    ) : null}
-                  </span>
-                  <div className="flex gap-2">
-                    <GhostButton active={joined[id]} onClick={() => setJoin(id, true)}>
-                      Join
-                    </GhostButton>
-                    <GhostButton active={!joined[id]} onClick={() => setJoin(id, false)}>
-                      Decline
-                    </GhostButton>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {enabledSide.length === 0 ? (
+            <p className="text-sm text-slate-500">No side bets offered this round.</p>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-slate-500">
+                Join or decline each side bet individually. Winners split the pot; ties split
+                equally.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {enabledSide.map((id) => {
+                  const carry = state.sideBetCarry[id];
+                  const carriedIn = Boolean(carry?.players?.includes(myId));
+                  const inTicket = joined[id];
+                  return (
+                    <div
+                      key={id}
+                      className={`rounded-xl border p-3 transition-colors ${
+                        inTicket
+                          ? "border-emerald-500/40 bg-emerald-500/5"
+                          : "border-white/10 bg-white/5"
+                      }`}
+                    >
+                      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="text-sm font-semibold text-slate-100">
+                          {SIDE_BET_LABELS[id]}
+                        </span>
+                        <span className="text-[0.7rem] font-semibold text-gold">
+                          ante {state.settings.sideBetStakes[id]}
+                        </span>
+                        {carry?.pot ? (
+                          <span className="text-[0.7rem] font-semibold text-emerald-300">
+                            carry {carry.pot}
+                          </span>
+                        ) : null}
+                      </div>
+                      {carriedIn ? (
+                        <p className="mb-2 text-[0.7rem] text-sky-300">
+                          You&apos;re in — you can win even if you decline.
+                        </p>
+                      ) : null}
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setJoin(id, true)}
+                          className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                            inTicket
+                              ? "bg-emerald-500 text-emerald-950 shadow-[0_4px_14px_rgba(16,185,129,0.35)]"
+                              : "border border-white/10 bg-white/5 text-slate-300 hover:border-emerald-400/40"
+                          }`}
+                        >
+                          Join
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setJoin(id, false)}
+                          className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                            !inTicket
+                              ? "bg-rose-600 text-white shadow-[0_4px_14px_rgba(225,29,72,0.35)]"
+                              : "border border-white/10 bg-white/5 text-slate-300 hover:border-rose-400/40"
+                          }`}
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </Panel>
 
         <div className="flex items-center justify-between fade-up">
-          <GhostButton onClick={() => setStep("main")}>Back</GhostButton>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500">
-              Joined {joinedCount}/{enabledSide.length}
-            </span>
-            <GoldButton onClick={finish}>Confirm &amp; Arrange Cards</GoldButton>
-          </div>
+          <span className="text-xs text-slate-500">
+            {enabledSide.length ? `Joined ${joinedCount}/${enabledSide.length}` : ""}
+          </span>
+          <GoldButton onClick={() => setStep("main")}>Lock Side Bets &amp; See Cards</GoldButton>
         </div>
       </div>
     );
   }
 
-  // --- Step 1: main bets --------------------------------------------------
+  // --- Step 2: main bets + cards (side bets already locked) ---------------
   return (
     <div className="mx-auto w-full max-w-4xl p-4 sm:p-6">
       {header}
@@ -171,70 +237,8 @@ export function BettingPanel() {
         </div>
       </Panel>
 
-      {!isHost && enabledSide.length > 0 ? (
-        <Panel className="mb-4 fade-up">
-          <SectionTitle>Side Bet Pots</SectionTitle>
-          <div className="grid gap-1 sm:grid-cols-2">
-            {enabledSide.map((id) => (
-              <div
-                key={id}
-                className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-1.5 text-sm"
-              >
-                <span className="text-slate-200">{SIDE_BET_LABELS[id]}</span>
-                <span className="text-xs text-slate-400">
-                  ante <span className="text-gold">{state.settings.sideBetStakes[id]}</span>
-                  {state.sideBetCarry[id]?.pot ? (
-                    <>
-                      {" · pot "}
-                      <span className="text-emerald-300">{state.sideBetCarry[id]!.pot}</span>
-                    </>
-                  ) : null}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      ) : null}
-
-      {isHost ? (
-        <Panel className="mb-4 fade-up">
-          <SectionTitle>Host · Side Bets on Offer</SectionTitle>
-          <p className="mb-2 text-xs text-slate-500">
-            Fill in which side bets are available this round. Each player then joins or declines.
-          </p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {ALL_SIDE_BETS.map((id) => (
-              <div key={id} className="rounded-lg border border-white/10 bg-white/5 px-3 pb-2">
-                <Toggle
-                  label={SIDE_BET_LABELS[id]}
-                  checked={state.settings.enabledSideBets[id]}
-                  onChange={(v) => toggleOffer(id, v)}
-                />
-                {state.sideBetCarry[id]?.pot ? (
-                  <p className="pb-1 text-xs text-emerald-300">
-                    Current pot: {state.sideBetCarry[id]!.pot}
-                  </p>
-                ) : null}
-                {state.settings.enabledSideBets[id] ? (
-                  <NumberField
-                    label="Ante per player"
-                    value={state.settings.sideBetStakes[id]}
-                    min={0}
-                    onChange={(v) => setStake(id, v ?? 0)}
-                  />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </Panel>
-      ) : null}
-
       <div className="mt-6 flex justify-end fade-up">
-        {enabledSide.length > 0 ? (
-          <GoldButton onClick={() => setStep("side")}>Continue to Side Bets</GoldButton>
-        ) : (
-          <GoldButton onClick={finish}>Confirm Bets &amp; Arrange Cards</GoldButton>
-        )}
+        <GoldButton onClick={finish}>Confirm Bets &amp; Arrange Cards</GoldButton>
       </div>
     </div>
   );
