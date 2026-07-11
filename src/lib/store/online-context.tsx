@@ -275,20 +275,35 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     const ids = list.map((r) => r.id);
     const counts: Record<string, number> = {};
     if (ids.length) {
-      const { data: pl } = await supabase.from("room_players").select("room_id").in("room_id", ids);
-      for (const p of (pl as { room_id: string }[]) ?? []) {
-        counts[p.room_id] = (counts[p.room_id] ?? 0) + 1;
+      const { data: pl } = await supabase
+        .from("room_players")
+        .select("room_id,connected")
+        .in("room_id", ids);
+      for (const p of (pl as { room_id: string; connected: boolean }[]) ?? []) {
+        if (p.connected) counts[p.room_id] = (counts[p.room_id] ?? 0) + 1;
       }
     }
+    // Clean up rooms with nobody connected so abandoned/historical rooms never
+    // show up in the browser.
+    const emptyIds = ids.filter((id) => (counts[id] ?? 0) === 0);
+    if (emptyIds.length) {
+      void supabase
+        .from("rooms")
+        .delete()
+        .in("id", emptyIds)
+        .then(() => undefined);
+    }
     setRooms(
-      list.map((r) => ({
-        id: r.id,
-        code: r.code,
-        host: r.host_name ?? "?",
-        hasPassword: Boolean(r.password),
-        players: counts[r.id] ?? 0,
-        status: r.status,
-      })),
+      list
+        .filter((r) => (counts[r.id] ?? 0) > 0)
+        .map((r) => ({
+          id: r.id,
+          code: r.code,
+          host: r.host_name ?? "?",
+          hasPassword: Boolean(r.password),
+          players: counts[r.id] ?? 0,
+          status: r.status,
+        })),
     );
   }, []);
 
@@ -775,9 +790,10 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       clearStoredSession();
       if (s) {
         // Keep the player's row (chips + seat) so they can rejoin by name;
-        // just mark them disconnected. If the room is still in the lobby and
-        // nobody else is connected, delete it so empty rooms disappear from the
-        // browser (child rows cascade).
+        // just mark them disconnected. If nobody is connected anymore, delete
+        // the room entirely (any game status) so empty/abandoned rooms never
+        // linger in the browser. If at least one person stays, the room — and
+        // its history — continues.
         void (async () => {
           const supabase = getSupabase();
           await supabase
@@ -785,12 +801,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
             .update({ connected: false, ready: false })
             .eq("room_id", s.roomId)
             .eq("seat", s.mySeat);
-          const { data: roomRow } = await supabase
-            .from("rooms")
-            .select("status")
-            .eq("id", s.roomId)
-            .maybeSingle();
-          if ((roomRow as { status?: string } | null)?.status !== "lobby") return;
           const { data: remaining } = await supabase
             .from("room_players")
             .select("seat")
