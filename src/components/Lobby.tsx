@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { defaultSettings } from "@/lib/game";
 import { useGame } from "@/lib/store/game-context";
+import { useBranding } from "./BackgroundManager";
 import { HostSettingsPanel } from "./HostSettingsPanel";
 import { GhostButton, GoldButton, Panel } from "./ui";
 
@@ -13,6 +14,7 @@ function randomRoomCode(): string {
 
 export function Entry() {
   const { createGame } = useGame();
+  const { logo, siteName } = useBranding();
   const [nickname, setNickname] = useState("");
   const [mode, setMode] = useState<"create" | "join">("create");
   const [joinCode, setJoinCode] = useState("");
@@ -25,8 +27,12 @@ export function Entry() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 p-6">
       <div className="text-center fade-up">
+        {logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logo} alt="" className="mx-auto mb-3 h-20 w-20 rounded-2xl object-contain" />
+        ) : null}
         <p className="text-xs uppercase tracking-[0.35em] text-gold/70">DOROXXX</p>
-        <h1 className="mt-1 text-4xl font-black gold-text">Pyat-Pyat</h1>
+        <h1 className="mt-1 text-4xl font-black gold-text">{siteName}</h1>
         <p className="mt-2 text-sm text-slate-400">Premium Banker Pusoy for four players.</p>
       </div>
 

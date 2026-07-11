@@ -144,8 +144,14 @@ insert into public.accounts (username, password, is_admin, balance)
 create table if not exists public.app_config (
   id         int primary key default 1 check (id = 1),
   background text not null default 'default',
+  logo       text,
+  site_name  text not null default 'Pyat-Pyat',
   updated_at timestamptz not null default now()
 );
+
+-- For existing databases: add the branding columns if they are missing.
+alter table public.app_config add column if not exists logo text;
+alter table public.app_config add column if not exists site_name text not null default 'Pyat-Pyat';
 
 insert into public.app_config (id, background) values (1, 'default')
   on conflict (id) do nothing;

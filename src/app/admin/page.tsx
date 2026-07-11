@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import { applyBackground } from "@/components/BackgroundManager";
+import { applyBackground, applyFavicon, applyTitle } from "@/components/BackgroundManager";
 import { GhostButton, GoldButton, Panel, SectionTitle } from "@/components/ui";
 
 interface Account {
@@ -40,6 +40,11 @@ export default function AdminPage() {
   const [customBg, setCustomBg] = useState("");
   const [uploading, setUploading] = useState(false);
 
+  // Branding config (logo + site name)
+  const [logo, setLogo] = useState<string | null>(null);
+  const [siteName, setSiteName] = useState("Pyat-Pyat");
+  const [logoUploading, setLogoUploading] = useState(false);
+
   const loadAccounts = useCallback(async () => {
     const { data } = await getSupabase()
       .from("accounts")
@@ -51,10 +56,15 @@ export default function AdminPage() {
   const loadConfig = useCallback(async () => {
     const { data } = await getSupabase()
       .from("app_config")
-      .select("background")
+      .select("background,logo,site_name")
       .eq("id", 1)
       .maybeSingle();
-    if (data) setBg((data as { background: string }).background);
+    if (data) {
+      const cfg = data as { background: string; logo: string | null; site_name: string | null };
+      setBg(cfg.background);
+      setLogo(cfg.logo ?? null);
+      setSiteName(cfg.site_name || "Pyat-Pyat");
+    }
   }, []);
 
   const saveBackground = async (value: string) => {
@@ -89,6 +99,53 @@ export default function AdminPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const saveSiteName = async () => {
+    const name = siteName.trim() || "Pyat-Pyat";
+    setSiteName(name);
+    applyTitle(name);
+    await getSupabase()
+      .from("app_config")
+      .update({ site_name: name, updated_at: new Date().toISOString() })
+      .eq("id", 1);
+  };
+
+  const uploadLogo = async (file: File) => {
+    setError("");
+    setLogoUploading(true);
+    try {
+      const supabase = getSupabase();
+      const ext = file.name.split(".").pop() || "png";
+      const path = `logo-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("backgrounds")
+        .upload(path, file, { upsert: true, cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("backgrounds").getPublicUrl(path);
+      setLogo(data.publicUrl);
+      applyFavicon(data.publicUrl);
+      await supabase
+        .from("app_config")
+        .update({ logo: data.publicUrl, updated_at: new Date().toISOString() })
+        .eq("id", 1);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `${e.message} — create a public 'backgrounds' storage bucket.`
+          : "Upload failed.",
+      );
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const removeLogo = async () => {
+    setLogo(null);
+    await getSupabase()
+      .from("app_config")
+      .update({ logo: null, updated_at: new Date().toISOString() })
+      .eq("id", 1);
   };
 
   // Restore admin session on mount.
@@ -237,6 +294,55 @@ export default function AdminPage() {
       </header>
 
       {error ? <p className="mb-4 text-sm text-rose-400">{error}</p> : null}
+
+      <Panel className="mb-5">
+        <SectionTitle>Branding</SectionTitle>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-xs text-slate-400">Site name (tab title &amp; header)</span>
+            <input
+              className={`${inputCls} min-w-0`}
+              placeholder="Pyat-Pyat"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void saveSiteName()}
+            />
+          </label>
+          <GoldButton onClick={() => void saveSiteName()}>Save name</GoldButton>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logo}
+              alt="logo"
+              className="h-12 w-12 rounded-md border border-white/10 object-contain"
+            />
+          ) : (
+            <span className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-white/15 text-[0.6rem] text-slate-500">
+              no logo
+            </span>
+          )}
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 hover:border-white/25">
+            {logoUploading ? "Uploading\u2026" : "Upload logo\u2026"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={logoUploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadLogo(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {logo ? <GhostButton onClick={() => void removeLogo()}>Remove</GhostButton> : null}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          The logo is used as the browser tab favicon and shown in the app header/lobby.
+        </p>
+      </Panel>
 
       <Panel className="mb-5">
         <SectionTitle>Background</SectionTitle>

@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useGame } from "@/lib/store/game-context";
 import { useOnline } from "@/lib/store/online-context";
 import { ArrangeBoard } from "../ArrangeBoard";
+import { Brand } from "../BackgroundManager";
 import { BettingPanel } from "../BettingPanel";
 import { ResultsPanel } from "../ResultsPanel";
 import { RoundHistory } from "../RoundHistory";
+import { ShuffleOverlay } from "../ShuffleOverlay";
 import { GhostButton, Panel } from "../ui";
 import { OnlineLobby } from "./OnlineLobby";
 import { PlayerLogin } from "./PlayerLogin";
@@ -48,10 +50,11 @@ function OnlineGame() {
 
   return (
     <div className="min-h-screen">
+      <ShuffleOverlay />
       <header className="sticky top-0 z-20 glass border-b border-white/10">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-2.5">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="hidden text-sm font-black gold-text sm:inline">Pyat-Pyat</span>
+            <Brand className="hidden text-sm sm:inline-flex" imgClassName="h-5 w-5" />
             <span className="rounded-md bg-black/30 px-2 py-0.5 font-mono text-xs tracking-widest text-gold">
               {session?.code}
             </span>

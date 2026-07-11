@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useGame } from "@/lib/store/game-context";
 import { ArrangeBoard } from "./ArrangeBoard";
+import { Brand } from "./BackgroundManager";
 import { BettingPanel } from "./BettingPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { RoundHistory } from "./RoundHistory";
+import { ShuffleOverlay } from "./ShuffleOverlay";
 import { GhostButton } from "./ui";
 
 export function GameShell() {
@@ -14,10 +16,11 @@ export function GameShell() {
 
   return (
     <div className="min-h-screen">
+      <ShuffleOverlay />
       <header className="sticky top-0 z-20 glass border-b border-white/10">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-2.5">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="text-sm font-black gold-text">Pyat-Pyat</span>
+            <Brand className="text-sm" imgClassName="h-5 w-5" />
             <span className="hidden text-xs text-slate-500 sm:inline">
               Round {state.round?.index ?? "-"}
             </span>

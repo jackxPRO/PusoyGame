@@ -753,13 +753,31 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       clearStoredSession();
       if (s) {
         // Keep the player's row (chips + seat) so they can rejoin by name;
-        // just mark them disconnected.
-        void getSupabase()
-          .from("room_players")
-          .update({ connected: false, ready: false })
-          .eq("room_id", s.roomId)
-          .eq("seat", s.mySeat)
-          .then(() => undefined);
+        // just mark them disconnected. If the room is still in the lobby and
+        // nobody else is connected, delete it so empty rooms disappear from the
+        // browser (child rows cascade).
+        void (async () => {
+          const supabase = getSupabase();
+          await supabase
+            .from("room_players")
+            .update({ connected: false, ready: false })
+            .eq("room_id", s.roomId)
+            .eq("seat", s.mySeat);
+          const { data: roomRow } = await supabase
+            .from("rooms")
+            .select("status")
+            .eq("id", s.roomId)
+            .maybeSingle();
+          if ((roomRow as { status?: string } | null)?.status !== "lobby") return;
+          const { data: remaining } = await supabase
+            .from("room_players")
+            .select("seat")
+            .eq("room_id", s.roomId)
+            .eq("connected", true);
+          if (!remaining || remaining.length === 0) {
+            await supabase.from("rooms").delete().eq("id", s.roomId);
+          }
+        })();
       }
       setSession(null);
       setRoom(null);

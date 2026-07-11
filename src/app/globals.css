@@ -135,6 +135,53 @@ body[data-bg="gold"] {
   animation: dealIn 0.35s ease both;
 }
 
+.shuffle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: rgba(3, 5, 10, 0.72);
+  backdrop-filter: blur(3px);
+  animation: fadeUp 0.2s ease both;
+}
+.shuffle-stack {
+  position: relative;
+  width: 3rem;
+  height: 4.5rem;
+}
+.shuffle-card {
+  position: absolute;
+  inset: 0;
+  animation: shuffle 0.85s ease-in-out infinite;
+}
+@keyframes shuffle {
+  0% {
+    transform: translateX(0) translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-38px) translateY(-8px) rotate(-14deg);
+  }
+  50% {
+    transform: translateX(0) translateY(0) rotate(0deg);
+  }
+  75% {
+    transform: translateX(38px) translateY(-8px) rotate(14deg);
+  }
+  100% {
+    transform: translateX(0) translateY(0) rotate(0deg);
+  }
+}
+.shuffle-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
 .btn-gold {
   background: linear-gradient(180deg, #f0d873 0%, #d4af37 50%, #a9851f 100%);
   color: #1a1206;

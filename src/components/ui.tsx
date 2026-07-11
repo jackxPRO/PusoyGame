@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 export function Panel({
   children,
@@ -77,18 +77,31 @@ export function NumberField({
   placeholder?: string;
   disabled?: boolean;
 }) {
+  // While the field is focused we keep the raw text the user is typing so that
+  // clearing it stays empty instead of snapping back to 0/min. When blurred we
+  // show the controlled value from props.
+  const [focused, setFocused] = useState(false);
+  const [draft, setDraft] = useState("");
+  const display = focused ? draft : value == null ? "" : String(value);
+
   return (
     <label className="flex flex-col gap-1">
       <span className="text-xs text-slate-400">{label}</span>
       <input
         type="number"
-        value={value ?? ""}
+        value={display}
         min={min}
         step={step}
         placeholder={placeholder}
         disabled={disabled}
+        onFocus={() => {
+          setDraft(value == null ? "" : String(value));
+          setFocused(true);
+        }}
+        onBlur={() => setFocused(false)}
         onChange={(e) => {
           const v = e.target.value;
+          setDraft(v);
           onChange(v === "" ? null : Number(v));
         }}
         className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 outline-none focus:border-gold/60 disabled:opacity-50"

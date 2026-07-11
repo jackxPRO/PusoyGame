@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
+
+export const DEFAULT_SITE_NAME = "Pyat-Pyat";
+
+interface AppConfig {
+  background?: string | null;
+  logo?: string | null;
+  site_name?: string | null;
+}
 
 export function applyBackground(value: string | null | undefined) {
   if (typeof document === "undefined") return;
@@ -20,20 +28,65 @@ export function applyBackground(value: string | null | undefined) {
   }
 }
 
-/** Applies the admin-selected background globally and live-updates on change. */
-export function BackgroundManager() {
+/** Point the browser tab favicon at the uploaded logo (or leave the default). */
+export function applyFavicon(url: string | null | undefined) {
+  if (typeof document === "undefined" || !url) return;
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
+  }
+  link.href = url;
+}
+
+export function applyTitle(name: string | null | undefined) {
+  if (typeof document === "undefined" || !name) return;
+  document.title = name;
+}
+
+interface BrandingValue {
+  logo: string | null;
+  siteName: string;
+}
+
+const BrandingContext = createContext<BrandingValue>({ logo: null, siteName: DEFAULT_SITE_NAME });
+
+export function useBranding(): BrandingValue {
+  return useContext(BrandingContext);
+}
+
+/**
+ * Loads the admin-managed branding/background config, applies it globally
+ * (background, favicon, tab title) and exposes the logo + site name to the UI.
+ * Live-updates on config change.
+ */
+export function BrandingProvider({ children }: { children: ReactNode }) {
+  const [logo, setLogo] = useState<string | null>(null);
+  const [siteName, setSiteName] = useState(DEFAULT_SITE_NAME);
+
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     const supabase = getSupabase();
     let active = true;
 
+    const apply = (cfg: AppConfig | null | undefined) => {
+      if (!cfg) return;
+      applyBackground(cfg.background);
+      applyFavicon(cfg.logo);
+      const name = cfg.site_name || DEFAULT_SITE_NAME;
+      applyTitle(name);
+      setLogo(cfg.logo ?? null);
+      setSiteName(name);
+    };
+
     void (async () => {
       const { data } = await supabase
         .from("app_config")
-        .select("background")
+        .select("background,logo,site_name")
         .eq("id", 1)
         .maybeSingle();
-      if (active && data) applyBackground((data as { background: string }).background);
+      if (active) apply(data as AppConfig | null);
     })();
 
     const channel = supabase
@@ -41,10 +94,7 @@ export function BackgroundManager() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "app_config" },
-        (payload) => {
-          const bg = (payload.new as { background?: string } | null)?.background;
-          applyBackground(bg);
-        },
+        (payload) => apply(payload.new as AppConfig | null),
       )
       .subscribe();
 
@@ -54,5 +104,27 @@ export function BackgroundManager() {
     };
   }, []);
 
-  return null;
+  return <BrandingContext.Provider value={{ logo, siteName }}>{children}</BrandingContext.Provider>;
+}
+
+/** Renders the site logo (if uploaded) next to a text label. */
+export function Brand({
+  className = "",
+  imgClassName = "h-8 w-8",
+  children,
+}: {
+  className?: string;
+  imgClassName?: string;
+  children?: ReactNode;
+}) {
+  const { logo, siteName } = useBranding();
+  return (
+    <span className={`inline-flex items-center gap-2 ${className}`}>
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt="" className={`rounded-md object-contain ${imgClassName}`} />
+      ) : null}
+      {children ?? <span className="gold-text font-black">{siteName}</span>}
+    </span>
+  );
 }

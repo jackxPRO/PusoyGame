@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { Entry, Lobby } from "@/components/Lobby";
+import { useBranding } from "@/components/BackgroundManager";
 import { GameShell } from "@/components/GameShell";
 import { OnlineShell } from "@/components/online/OnlineShell";
 import { GameProvider, useGame } from "@/lib/store/game-context";
@@ -16,11 +17,16 @@ function LocalScreen() {
 }
 
 function Splash() {
+  const { logo, siteName } = useBranding();
   return (
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
+        {logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logo} alt="" className="mx-auto mb-3 h-20 w-20 rounded-2xl object-contain" />
+        ) : null}
         <p className="text-xs uppercase tracking-[0.35em] text-gold/70">DOROXXX</p>
-        <h1 className="mt-1 text-4xl font-black gold-text">Pyat-Pyat</h1>
+        <h1 className="mt-1 text-4xl font-black gold-text">{siteName}</h1>
       </div>
     </div>
   );

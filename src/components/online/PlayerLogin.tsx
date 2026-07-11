@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useOnline } from "@/lib/store/online-context";
+import { useBranding } from "../BackgroundManager";
 import { GoldButton, Panel } from "../ui";
 
 export function PlayerLogin() {
   const { login, connecting, error } = useOnline();
+  const { logo, siteName } = useBranding();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
@@ -17,8 +19,12 @@ export function PlayerLogin() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 p-6">
       <div className="text-center fade-up">
+        {logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logo} alt="" className="mx-auto mb-3 h-20 w-20 rounded-2xl object-contain" />
+        ) : null}
         <p className="text-xs uppercase tracking-[0.35em] text-gold/70">DOROXXX</p>
-        <h1 className="mt-1 text-4xl font-black gold-text">Pyat-Pyat</h1>
+        <h1 className="mt-1 text-4xl font-black gold-text">{siteName}</h1>
         <p className="mt-2 text-sm text-slate-400">Sign in with your player account.</p>
       </div>
 
