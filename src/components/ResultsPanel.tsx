@@ -115,23 +115,35 @@ function SeatReveal({
         </p>
         {lines.length > 0 ? (
           <div className="space-y-1">
-            {lines.map((l) => (
-              <div key={l.label}>
-                <div className="flex items-center justify-between text-[0.72rem]">
-                  <span className="text-slate-300">{l.label}</span>
-                  <Amount value={l.value} />
-                </div>
-                {l.sub?.map((s) => (
-                  <div
-                    key={s.label}
-                    className="flex items-center justify-between pl-3 text-[0.66rem] text-slate-500"
-                  >
-                    <span>{s.label}</span>
-                    <Amount value={s.value} />
+            {lines.map((l) => {
+              // A single detail line duplicates the category total, so fold it
+              // into one row (e.g. a challenger only ever faces the banker).
+              const single = l.sub && l.sub.length === 1;
+              return (
+                <div key={l.label}>
+                  <div className="flex items-center justify-between text-[0.72rem]">
+                    <span className="text-slate-300">
+                      {l.label}
+                      {single ? (
+                        <span className="text-slate-500"> · {l.sub![0].label}</span>
+                      ) : null}
+                    </span>
+                    <Amount value={l.value} />
                   </div>
-                ))}
-              </div>
-            ))}
+                  {!single
+                    ? l.sub?.map((s) => (
+                        <div
+                          key={s.label}
+                          className="flex items-center justify-between pl-3 text-[0.66rem] text-slate-500"
+                        >
+                          <span>{s.label}</span>
+                          <Amount value={s.value} />
+                        </div>
+                      ))
+                    : null}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="text-[0.7rem] text-slate-500">No chips moved this round.</p>
@@ -246,9 +258,9 @@ export function ResultsPanel() {
               value: -match.personalDelta,
               sub: [
                 {
-                  label: `${match.bankerWinsOverall ? "lost" : "won"} (${
+                  label: `${match.bankerWinsOverall ? "lost" : "won"} ${
                     match.challengerRowWins
-                  }/3 lines) \u2014 1:1`,
+                  }/3 lines`,
                   value: -match.personalDelta,
                 },
               ],
