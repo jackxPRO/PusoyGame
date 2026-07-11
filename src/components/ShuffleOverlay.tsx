@@ -26,12 +26,16 @@ export function ShuffleOverlay() {
     if (roundIndex <= prev.current) return;
     prev.current = roundIndex;
     const raf = requestAnimationFrame(() => setShow(true));
-    const hide = setTimeout(() => setShow(false), 1100);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(hide);
-    };
+    return () => cancelAnimationFrame(raf);
   }, [roundIndex]);
+
+  // Self-clearing safety net: whenever the overlay is shown, force it back off
+  // shortly after so it can never stay stuck covering the screen.
+  useEffect(() => {
+    if (!show) return;
+    const hide = setTimeout(() => setShow(false), 1100);
+    return () => clearTimeout(hide);
+  }, [show]);
 
   if (!show) return null;
 

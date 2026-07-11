@@ -120,8 +120,9 @@ const EMPTY_ARR: Arrangement = { front: [], middle: [], back: [] };
 const REJOIN_GRACE_MS = 2 * 60 * 1000;
 // Default reconnect window if a room's settings predate the field (Rule 11/12).
 const DEFAULT_RECONNECT_SECONDS = 60;
-// A player is treated as disconnected once their heartbeat is this stale.
-const HEARTBEAT_STALE_MS = 8 * 1000;
+// A player is treated as disconnected once their heartbeat is this stale. Kept
+// well above the ~20s heartbeat interval so a live player is never misflagged.
+const HEARTBEAT_STALE_MS = 45 * 1000;
 const STORAGE_KEY = "pusoy_session";
 const ACCOUNT_KEY = "pusoy_account_id";
 
@@ -286,6 +287,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const resolvedRef = useRef<Set<string>>(new Set());
   const seenResultRef = useRef<Set<string>>(new Set());
   const lastRoundIdRef = useRef<string | null>(null);
+  // Guards against overlapping room-state loads (realtime bursts + polling).
+  const loadingRef = useRef(false);
+  const lastHeartbeatRef = useRef(0);
   // Latest room/players snapshot for the polling supervisor (avoids resetting
   // the interval on every state change).
   const roomRef = useRef<RoomRow | null>(null);
@@ -412,35 +416,45 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadRoomState = useCallback(async (roomId: string) => {
-    const supabase = getSupabase();
-    const [{ data: roomData }, { data: playerData }, { data: roundData }] = await Promise.all([
-      supabase.from("rooms").select("*").eq("id", roomId).single(),
-      supabase.from("room_players").select("*").eq("room_id", roomId).order("seat"),
-      supabase
-        .from("rounds")
-        .select("*")
-        .eq("room_id", roomId)
-        .order("round_no", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-
-    setRoom((roomData as RoomRow) ?? null);
-    setPlayers((playerData as PlayerRow[]) ?? []);
-
-    const currentRound = (roundData as RoundRow) ?? null;
-    setRound(currentRound);
-
-    if (currentRound) {
-      const [{ data: moveData }, { data: resultData }] = await Promise.all([
-        supabase.from("round_moves").select("*").eq("round_id", currentRound.id),
-        supabase.from("round_results").select("*").eq("round_id", currentRound.id).maybeSingle(),
+    // Skip if a load is already in flight so bursts of realtime events (and the
+    // polling fallback) can't stack up dozens of overlapping fetches.
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    try {
+      const supabase = getSupabase();
+      const [{ data: roomData }, { data: playerData }, { data: roundData }] = await Promise.all([
+        supabase.from("rooms").select("*").eq("id", roomId).maybeSingle(),
+        supabase.from("room_players").select("*").eq("room_id", roomId).order("seat"),
+        supabase
+          .from("rounds")
+          .select("*")
+          .eq("room_id", roomId)
+          .order("round_no", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
-      setMoves((moveData as MoveRow[]) ?? []);
-      setResult((resultData as ResultRow) ?? null);
-    } else {
-      setMoves([]);
-      setResult(null);
+
+      // Keep the last good room if a read comes back empty (transient) instead
+      // of blanking the screen to a stuck "Connecting to room…" state.
+      if (roomData) setRoom(roomData as RoomRow);
+      if (playerData) setPlayers(playerData as PlayerRow[]);
+
+      const currentRound = (roundData as RoundRow) ?? null;
+      setRound(currentRound);
+
+      if (currentRound) {
+        const [{ data: moveData }, { data: resultData }] = await Promise.all([
+          supabase.from("round_moves").select("*").eq("round_id", currentRound.id),
+          supabase.from("round_results").select("*").eq("round_id", currentRound.id).maybeSingle(),
+        ]);
+        setMoves((moveData as MoveRow[]) ?? []);
+        setResult((resultData as ResultRow) ?? null);
+      } else {
+        setMoves([]);
+        setResult(null);
+      }
+    } finally {
+      loadingRef.current = false;
     }
   }, []);
 
@@ -636,12 +650,17 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       const supabase = getSupabase();
       void loadRoomState(session.roomId);
       // Heartbeat: keep my seat's last_seen fresh so peers know I'm alive.
-      void supabase
-        .from("room_players")
-        .update({ last_seen: new Date().toISOString() })
-        .eq("room_id", session.roomId)
-        .eq("seat", mySeat)
-        .then(() => undefined);
+      // Throttled to ~20s so it doesn't flood the realtime channel (each write
+      // broadcasts a room_players change to every client).
+      if (Date.now() - lastHeartbeatRef.current > 20000) {
+        lastHeartbeatRef.current = Date.now();
+        void supabase
+          .from("room_players")
+          .update({ last_seen: new Date().toISOString() })
+          .eq("room_id", session.roomId)
+          .eq("seat", mySeat)
+          .then(() => undefined);
+      }
 
       // Purge players who explicitly quit and never rejoined within the grace.
       const cutoff = new Date(Date.now() - REJOIN_GRACE_MS).toISOString();
