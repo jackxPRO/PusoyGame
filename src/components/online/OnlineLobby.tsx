@@ -78,7 +78,7 @@ export function OnlineLobby() {
               </span>
               <span className="text-xs text-slate-500">
                 Seat {seat + 1}
-                {seat === 0 ? " \u00b7 Host" : ""}
+                {seat === hostSeat ? " \u00b7 Host" : ""}
               </span>
               {p ? (
                 p.ready ? (

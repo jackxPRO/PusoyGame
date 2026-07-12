@@ -285,6 +285,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const loadingRef = useRef(false);
   const loadStartRef = useRef(0);
   const lastHeartbeatRef = useRef(0);
+  const reconnectingRef = useRef(false);
   // Latest room/players snapshot for the polling supervisor (avoids resetting
   // the interval on every state change).
   const roomRef = useRef<RoomRow | null>(null);
@@ -635,6 +636,16 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) return;
     const mySeat = session.mySeat;
+    const markDisconnected = () => {
+      reconnectingRef.current = true;
+      void getSupabase()
+        .from("room_players")
+        .update({ connected: false, disconnected_at: new Date().toISOString() })
+        .eq("room_id", session.roomId)
+        .eq("seat", mySeat)
+        .then(() => undefined);
+    };
+    window.addEventListener("offline", markDisconnected);
     const id = setInterval(() => {
       const supabase = getSupabase();
       void loadRoomState(session.roomId);
@@ -642,13 +653,27 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       // Throttled to ~20s so it doesn't flood the realtime channel (each write
       // broadcasts a room_players change to every client).
       if (Date.now() - lastHeartbeatRef.current > 20000) {
-        lastHeartbeatRef.current = Date.now();
         void supabase
           .from("room_players")
-          .update({ last_seen: new Date().toISOString() })
+          // A successful heartbeat is also a reconnect acknowledgement. It
+          // restores the existing seat without altering a new joiner's pending
+          // status for the current hand.
+          .update({
+            connected: true,
+            disconnected_at: null,
+            last_seen: new Date().toISOString(),
+            ...(reconnectingRef.current ? { pending: false } : {}),
+          })
           .eq("room_id", session.roomId)
           .eq("seat", mySeat)
-          .then(() => undefined);
+          .then(({ error: heartbeatError }) => {
+            // Only throttle after a successful write. A failed request during
+            // an outage must retry promptly when the connection comes back.
+            if (!heartbeatError) {
+              reconnectingRef.current = false;
+              lastHeartbeatRef.current = Date.now();
+            }
+          });
       }
 
       // Purge players who explicitly quit and never rejoined within the grace.
@@ -671,7 +696,11 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       // Rule 12 — host migration: if the host's heartbeat has lapsed past the
       // reconnect window, hand the host role to the next live seat clockwise.
       const hostPlayer = ps.find((p) => p.seat === r.host_seat);
-      const hostGone = !hostPlayer || !hostPlayer.connected || staleFor(hostPlayer) > reconnectMs;
+      // The creator remains the host while the room is in the lobby. Host
+      // migration is only meaningful after a game has started.
+      const hostGone =
+        r.status === "in_progress" &&
+        (!hostPlayer || staleFor(hostPlayer) > reconnectMs);
       if (hostGone) {
         const next = nextLiveSeatClockwise(r.host_seat, ps);
         if (next !== null && next !== r.host_seat) {
@@ -684,7 +713,10 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       }
 
     }, 2000);
-    return () => clearInterval(id);
+    return () => {
+      window.removeEventListener("offline", markDisconnected);
+      clearInterval(id);
+    };
   }, [session, loadRoomState]);
 
   // Reconnect on mount (survive page refresh) from the stored session.
