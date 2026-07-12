@@ -1234,6 +1234,27 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const myDbMove = session ? moves.find((m) => m.seat === session.mySeat) ?? null : null;
   const effectiveSubmitted = mySubmitted || Boolean(myDbMove?.submitted);
   const effectiveSettings = localSettings ?? room?.settings ?? null;
+
+  // Initialize progressive pot once when a brand-new match starts.
+  // Expected: Progressive Pot = initialPotBet × number of active players.
+  useEffect(() => {
+    if (!session || !room || !effectiveSettings) return;
+    if (room.round_no !== 0) return;
+    if (room.pot !== 0) return;
+
+    const activeCount = players.filter((p) => !p.eliminated && p.connected).length;
+    if (activeCount < 2) return;
+
+    const initialPotTotal = effectiveSettings.initialPotBet * activeCount;
+    if (initialPotTotal <= 0) return;
+
+    void getSupabase()
+      .from("rooms")
+      .update({ pot: initialPotTotal })
+      .eq("id", room.id)
+      .then(() => undefined);
+  }, [session, room, players, effectiveSettings]);
+
   const started = room?.status === "in_progress" && Boolean(round);
   const waiting = effectiveSubmitted && !result;
   const myRow = session ? players.find((p) => p.seat === session.mySeat) ?? null : null;

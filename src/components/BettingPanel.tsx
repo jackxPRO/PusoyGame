@@ -26,7 +26,15 @@ export function BettingPanel() {
     (p) => p.chips < minRequiredBet(state.settings),
   );
 
-  const [step, setStep] = useState<"side" | "personal" | "waiting">(mySideBetsLocked ? "personal" : "side");
+  // IMPORTANT:
+  // Do NOT keep a local "step" state that depends on server lock flags.
+  // In realtime mode, lock flags can update after this component renders,
+  // and stale local state can strand the host/challengers on "waiting".
+  const personalBetsLocked = round.personalBetsLocked;
+  const isSideStep = !mySideBetsLocked;
+  const isWaitingForPersonal =
+    isBanker && !personalBetsLocked;
+
   const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
   const [joined, setJoined] = useState<Record<SideBetId, boolean>>(
     () => Object.fromEntries(ALL_SIDE_BETS.map((id) => [id, false])) as Record<SideBetId, boolean>,
@@ -36,8 +44,6 @@ export function BettingPanel() {
     () => ALL_SIDE_BETS.filter((id) => state.settings.enabledSideBets[id]),
     [state.settings.enabledSideBets],
   );
-
-  const isSideStep = step === "side" && !mySideBetsLocked;
 
   const setJoin = (id: SideBetId, v: boolean) => setJoined((cur) => ({ ...cur, [id]: v }));
 
@@ -225,11 +231,8 @@ export function BettingPanel() {
               const sideBets = enabledSide.filter((id) => joined[id]);
               void lockSideBets(sideBets).then(async (locked) => {
                 if (!locked) return;
-                if (isBanker) {
-                  if (await lockPersonalBet(0)) setStep("waiting");
-                } else {
-                  setStep("personal");
-                }
+                // Server-side locks are the source of truth for the next UI.
+                if (isBanker) await lockPersonalBet(0);
               });
             }}
           >
@@ -240,19 +243,23 @@ export function BettingPanel() {
     );
   }
 
-  if (step === "waiting" || isBanker) {
+  if (isWaitingForPersonal) {
     return (
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         {header}
         <Panel className="text-center fade-up">
           <h3 className="mb-1 text-lg font-black text-gold">Personal Bet Locked</h3>
-          <p className="text-sm text-slate-400">Waiting for the other challengers to lock their personal bets.</p>
+          <p className="text-sm text-slate-400">
+            Waiting for the other challengers to lock their personal bets.
+          </p>
         </Panel>
       </div>
     );
   }
 
   // --- Step 2: challengers lock personal bets before cards are shown ------
+  // (When personal bets are already locked, the phase should transition out of
+  // betting; still, we avoid presenting the "waiting" UI based on stale local state.)
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
       {header}
@@ -309,13 +316,11 @@ export function BettingPanel() {
         <GoldButton
           onClick={() => {
             if (personalInvalid) return;
-            void lockPersonalBet(personalBet ?? 0).then((locked) => {
-              if (locked) setStep("waiting");
-            });
+            void lockPersonalBet(personalBet ?? 0);
           }}
-          disabled={personalInvalid}
+          disabled={personalInvalid || personalBetsLocked}
         >
-          Lock Personal Bet
+          {personalBetsLocked ? "Personal Bets Locked" : "Lock Personal Bet"}
         </GoldButton>
       </div>
     </div>

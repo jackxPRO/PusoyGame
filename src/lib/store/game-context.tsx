@@ -171,10 +171,16 @@ function reducer(state: GameState, action: Action): GameState {
     case "CREATE": {
       const players = makePlayers(action.nickname);
       const { bankerIndex } = drawForBanker(SEAT_COUNT);
+
+      // Progressive pot starts as: initialPotBet × number of players
+      // (brand-new progressive pot, only once at game creation).
+      const initialPotTotal = action.settings.initialPotBet * players.length;
+
       return {
         ...initialState(),
         settings: action.settings,
         players,
+        pot: initialPotTotal,
         bankerSeat: bankerIndex,
         phase: "lobby",
       };
