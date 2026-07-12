@@ -60,6 +60,15 @@ export interface RoundState {
   bets: SeatBets[]; // by seat
   humanSubmitted: boolean;
   result: RoundResult | null;
+  /** Betting suspended this round (Rule 15), decided before the pot ante.
+   * Optional: the online store does not pre-charge the ante. */
+  bettingSuspended?: boolean;
+  /** A new progressive pot started this round (ante is the initial pot bet). */
+  freshPot?: boolean;
+  /** The pot ante every seat pays up front this round. */
+  potAnte?: number;
+  /** Each seat's chip balance before this round's ante, by seat. */
+  startChips?: number[];
 }
 
 export interface HistoryEntry {
@@ -88,7 +97,8 @@ type Action =
   | { type: "CREATE"; nickname: string; settings: HostSettings }
   | { type: "UPDATE_SETTINGS"; patch: Partial<HostSettings> }
   | { type: "START_ROUND" }
-  | { type: "PLACE_BETS"; bets: SeatBets }
+  | { type: "LOCK_SIDE_BETS"; sideBets: SideBetId[] }
+  | { type: "PLACE_BETS"; bets: Partial<SeatBets> }
   | { type: "SET_ARRANGEMENT"; arrangement: Arrangement }
   | { type: "DECLARE_SPECIAL"; special: SpecialHandId | null }
   | { type: "SUBMIT" }
@@ -145,7 +155,28 @@ function botBets(settings: HostSettings): SeatBets {
 
 function startRound(state: GameState): GameState {
   const hands = deal(SEAT_COUNT);
-  const bets = state.players.map(() => botBets(state.settings));
+
+  // The mandatory pot ante is collected up front, at the start of the round:
+  // every seat's chips are debited and the progressive pot grows immediately,
+  // rather than being settled only after the hand is revealed.
+  const bettingSuspended = state.players.some(
+    (p) => p.chips < minRequiredBet(state.settings),
+  );
+  const freshPot = state.pot <= 0;
+  const potAnte = bettingSuspended ? 0 : potBetForRound(state.settings, state.pot);
+
+  const startChips = state.players.map((p) => p.chips);
+  let contributed = 0;
+  const players = state.players.map((p) => {
+    const paid = Math.min(potAnte, p.chips);
+    contributed += paid;
+    return { ...p, chips: p.chips - paid };
+  });
+
+  const bets = state.players.map((p) => ({
+    ...botBets(state.settings),
+    potBet: Math.min(potAnte, p.chips),
+  }));
   const arrangements = hands.map((h) => autoArrange(h, state.settings.suitRanking));
   const declared: (SpecialHandId | null)[] = hands.map((h, seat) =>
     seat === HUMAN_SEAT ? null : bestSpecial(h, state.settings),
@@ -162,8 +193,19 @@ function startRound(state: GameState): GameState {
     bets,
     humanSubmitted: false,
     result: null,
+    bettingSuspended,
+    freshPot,
+    potAnte,
+    startChips,
   };
-  return { ...state, phase: "betting", round, roundCounter: state.roundCounter + 1 };
+  return {
+    ...state,
+    phase: "betting",
+    players,
+    pot: state.pot + contributed,
+    round,
+    roundCounter: state.roundCounter + 1,
+  };
 }
 
 function reducer(state: GameState, action: Action): GameState {
@@ -183,11 +225,21 @@ function reducer(state: GameState, action: Action): GameState {
       return { ...state, settings: { ...state.settings, ...action.patch } };
     case "START_ROUND":
       return startRound(state);
+    case "LOCK_SIDE_BETS": {
+      if (!state.round) return state;
+      const bets = state.round.bets.slice();
+      bets[HUMAN_SEAT] = { ...bets[HUMAN_SEAT], sideBets: action.sideBets };
+      return { ...state, round: { ...state.round, bets, sideBetsLocked: true } };
+    }
     case "PLACE_BETS": {
       if (!state.round) return state;
       const bets = state.round.bets.slice();
-      bets[HUMAN_SEAT] = action.bets;
-      return { ...state, phase: "arranging", round: { ...state.round, bets } };
+      bets[HUMAN_SEAT] = { ...bets[HUMAN_SEAT], ...action.bets };
+      return {
+        ...state,
+        phase: "arranging",
+        round: { ...state.round, bets, personalBetsLocked: true },
+      };
     }
     case "SET_ARRANGEMENT": {
       if (!state.round) return state;
@@ -204,23 +256,23 @@ function reducer(state: GameState, action: Action): GameState {
     case "SUBMIT": {
       if (!state.round) return state;
       const r = state.round;
-      // Rule 15: suspend betting for everyone if any player is at zero balance.
-      const zeroThreshold = minRequiredBet(state.settings);
-      const bettingSuspended = state.players.some((p) => p.chips < zeroThreshold);
+      // The pot ante was already collected at the start of the round, so it is
+      // not charged again here (potBet: 0); resolution only settles the hand
+      // results, scoop award and side bets on top of the pre-charged balances.
       const result = resolveRound({
         settings: state.settings,
         bankerId: state.players[r.bankerSeat].id,
         pot: { amount: state.pot },
         sideBetStake: state.sideBetStake,
         sideBetCarry: state.sideBetCarry,
-        bettingSuspended,
+        bettingSuspended: r.bettingSuspended,
         players: state.players.map((p) => ({
           id: p.id,
           dealt: r.hands[p.seat],
           arrangement: r.arrangements[p.seat],
           declaredSpecial: r.declared[p.seat],
           personalBet: r.bets[p.seat].personalBet,
-          potBet: r.bets[p.seat].potBet,
+          potBet: 0,
           sideBets: r.bets[p.seat].sideBets,
           chips: p.chips,
         })),
@@ -231,12 +283,18 @@ function reducer(state: GameState, action: Action): GameState {
         chips: Math.max(0, p.chips + (result.chipDeltas[p.id] ?? 0)),
       }));
 
+      // Net for the round = final chips minus the balance before the ante, so
+      // the up-front pot contribution is reflected in the reported delta.
+      const startChips = r.startChips ?? state.players.map((p) => p.chips);
+      const fullDeltas: Record<string, number> = {};
+      for (const p of players) fullDeltas[p.id] = p.chips - startChips[p.seat];
+
       const history: HistoryEntry = {
         index: r.index,
         bankerSeat: r.bankerSeat,
         scoop: result.scoring.scoop,
         potAwarded: result.potAwardedAmount,
-        chipDeltas: { ...result.chipDeltas },
+        chipDeltas: fullDeltas,
         seatNames: state.players.map((p) => p.nickname),
       };
 
@@ -303,8 +361,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
   );
   const startRound = useCallback(() => dispatch({ type: "START_ROUND" }), []);
   const placeBets = useCallback((bets: SeatBets) => dispatch({ type: "PLACE_BETS", bets }), []);
-  const lockSideBets = useCallback(async () => true, []);
-  const lockPersonalBet = useCallback(async () => true, []);
+  const lockSideBets = useCallback(async (sideBets: SideBetId[]) => {
+    dispatch({ type: "LOCK_SIDE_BETS", sideBets });
+    return true;
+  }, []);
+  const lockPersonalBet = useCallback(async (personalBet: number) => {
+    dispatch({ type: "PLACE_BETS", bets: { personalBet } });
+    return true;
+  }, []);
   const setHumanArrangement = useCallback(
     (arrangement: Arrangement) => dispatch({ type: "SET_ARRANGEMENT", arrangement }),
     [],

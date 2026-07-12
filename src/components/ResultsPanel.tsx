@@ -234,9 +234,13 @@ export function ResultsPanel() {
           const bonusEach = matches.length ? result.scoring.scoopBonusAwarded / matches.length : 0;
           const nameOf = (id: string) =>
             state.players.find((pp) => `seat-${pp.seat}` === id)?.nickname ?? id;
-          const delta = result.chipDeltas[p.id] ?? 0;
+          // When the pot ante is charged up front (local play), the round net
+          // is the swing from the balance before the ante; otherwise fall back
+          // to the resolution delta (online play settles the ante at reveal).
           const chipsAfter = p.chips;
-          const chipsBefore = chipsAfter - delta;
+          const chipsBefore =
+            round.startChips?.[p.seat] ?? chipsAfter - (result.chipDeltas[p.id] ?? 0);
+          const delta = chipsAfter - chipsBefore;
 
           const lines: CalcLine[] = [];
 
