@@ -71,21 +71,21 @@ export function HostSettingsPanel({
       <Panel>
         <SectionTitle>Betting Limits</SectionTitle>
         <p className="mb-3 text-xs text-slate-500">
-          The pot is fixed by the host: an initial bet for the first round, then the progressive pot
-          each round after.
+          A new pot starts with the Initial Pot Bet. The Progressive Pot Bet is used for every
+          following round until a banker scoops.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
-            label="First-Round Initial Bet"
-            value={settings.mandatoryPot}
+            label="Initial Pot Bet"
+            value={settings.initialPotBet}
             min={0}
-            onChange={(v) => onChange({ mandatoryPot: v ?? 0 })}
+            onChange={(v) => onChange({ initialPotBet: v ?? 0 })}
           />
           <NumberField
-            label="Progressive Pot (round 2+)"
-            value={settings.minPotBet}
+            label="Progressive Pot Bet"
+            value={settings.progressivePotBet}
             min={0}
-            onChange={(v) => onChange({ minPotBet: v ?? 0 })}
+            onChange={(v) => onChange({ progressivePotBet: v ?? 0 })}
           />
           <NumberField
             label="Min Personal Bet"

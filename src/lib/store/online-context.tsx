@@ -81,6 +81,7 @@ interface RoundRow {
   hands: Card[][];
   phase: string;
   side_bets_locked?: boolean;
+  personal_bets_locked?: boolean;
 }
 interface MoveRow {
   id: string;
@@ -91,6 +92,7 @@ interface MoveRow {
   personal_bet: number;
   side_bets: string[];
   side_bets_locked?: boolean;
+  personal_bet_locked?: boolean;
   arrangement: Arrangement | null;
   declared_special: string | null;
   submitted: boolean;
@@ -270,7 +272,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [myArrangement, setMyArrangement] = useState<Arrangement | null>(null);
   const [myDeclared, setMyDeclared] = useState<SpecialHandId | null>(null);
-  const [myBetsPlaced, setMyBetsPlaced] = useState(false);
   const [mySubmitted, setMySubmitted] = useState(false);
   const [localSettings, setLocalSettings] = useState<HostSettings | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -490,7 +491,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       lastRoundIdRef.current = round.id;
       setMyArrangement(null);
       setMyDeclared(null);
-      setMyBetsPlaced(false);
       setMySubmitted(false);
     }
   }, [round]);
@@ -511,6 +511,22 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     };
     setHistory((h) => [entry, ...h.filter((x) => x.index !== entry.index)]);
   }, [result, round, players]);
+
+  // Once every active player has locked their personal bet (the banker locks
+  // zero automatically), reveal the cards and let the arranging phase begin.
+  useEffect(() => {
+    if (!session || !room || !round || round.personal_bets_locked) return;
+    if (room.host_seat !== session.mySeat) return;
+    const active = players.filter((p) => !p.pending && !p.eliminated && p.connected);
+    if (active.length < 2) return;
+    const locks = new Map(moves.map((m) => [m.seat, m.personal_bet_locked]));
+    if (!active.every((p) => locks.get(p.seat))) return;
+    void getSupabase()
+      .from("rounds")
+      .update({ personal_bets_locked: true })
+      .eq("id", round.id)
+      .then(() => undefined);
+  }, [session, room, round, players, moves]);
 
   // Host resolves the round once every seated player has submitted.
   useEffect(() => {
@@ -1007,6 +1023,27 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     return true;
   }, [session, room, round]);
 
+  const lockPersonalBet = useCallback(async (personalBet: number): Promise<boolean> => {
+    if (!session || !room || !round) return false;
+    const { error: lockError } = await getSupabase().from("round_moves").upsert(
+      {
+        round_id: round.id,
+        room_id: room.id,
+        seat: session.mySeat,
+        pot_bet: potBetForRound(room.settings, room.pot),
+        personal_bet: personalBet,
+        personal_bet_locked: true,
+        submitted: false,
+      },
+      { onConflict: "round_id,seat" },
+    );
+    if (lockError) {
+      setError(`Lock personal bet: ${lockError.message}`);
+      return false;
+    }
+    return true;
+  }, [session, room, round]);
+
   // Host controls (Rule 12): pause/resume the game and remove disconnected
   // players between rounds.
   const pauseGame = useCallback(
@@ -1035,7 +1072,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     (bets: SeatBets) => {
       if (!session || !round || !room) return;
       const seat = session.mySeat;
-      setMyBetsPlaced(true);
       void run(
         "Place bets",
         getSupabase()
@@ -1062,7 +1098,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     const seat = session.mySeat;
     const settings = localSettings ?? room.settings;
     const arr = myArrangement ?? autoArrange(round.hands[seat], settings.suitRanking);
-    setMyBetsPlaced(true);
     setMySubmitted(true);
     void run(
       "Submit hand",
@@ -1151,7 +1186,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       setHistory([]);
       setMyArrangement(null);
       setMyDeclared(null);
-      setMyBetsPlaced(false);
       setMySubmitted(false);
       setLocalSettings(null);
       // Refresh my account balance (it may have changed during the game).
@@ -1188,7 +1222,6 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
   // Own status is tracked with monotonic local flags OR the DB row, so the
   // polling refresh can never roll back an action that hasn't yet round-tripped.
   const myDbMove = session ? moves.find((m) => m.seat === session.mySeat) ?? null : null;
-  const effectiveBetsPlaced = myBetsPlaced || Boolean(myDbMove);
   const effectiveSubmitted = mySubmitted || Boolean(myDbMove?.submitted);
   const effectiveSettings = localSettings ?? room?.settings ?? null;
   const started = room?.status === "in_progress" && Boolean(round);
@@ -1212,11 +1245,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     (v: number) => {
       const s = effectiveSettings;
       if (!s) return v;
-      let x = Math.max(potBetForRound(s, round?.round_no ?? 1), Math.round(v));
-      if (s.maxPotBet !== null) x = Math.min(s.maxPotBet, x);
-      return x;
+      return Math.max(potBetForRound(s, room?.pot ?? 0), Math.round(v));
     },
-    [effectiveSettings, round?.round_no],
+    [effectiveSettings, room?.pot],
   );
   const clampPersonalBet = useCallback(
     (v: number) => {
@@ -1252,6 +1283,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
           index: round.round_no,
           bankerSeat: round.banker_seat,
           sideBetsLocked: Boolean(round.side_bets_locked),
+          personalBetsLocked: Boolean(round.personal_bets_locked),
           sideBetLocks: Array.from({ length: SEAT_COUNT }, (_, seat) =>
             Boolean(bySeat.get(seat)?.side_bets_locked),
           ),
@@ -1285,7 +1317,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     let phase: GameState["phase"] = "lobby";
     if (round) {
       if (result) phase = "revealed";
-      else if (!effectiveBetsPlaced) phase = "betting";
+      else if (!round.personal_bets_locked) phase = "betting";
       else phase = "arranging";
     }
 
@@ -1314,6 +1346,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       createGame: () => {},
       updateSettings,
       lockSideBets,
+      lockPersonalBet,
       startRound: () => void dealRound(),
       placeBets,
       setHumanArrangement: (a: Arrangement) => setMyArrangement(a),
@@ -1337,10 +1370,10 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     myArrangement,
     myDeclared,
     localSettings,
-    effectiveBetsPlaced,
     effectiveSubmitted,
     updateSettings,
     lockSideBets,
+    lockPersonalBet,
     dealRound,
     placeBets,
     submitRound,

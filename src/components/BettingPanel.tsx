@@ -1,23 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SIDE_BET_LABELS, minRequiredBet, potBetForRound, sortByRankDesc, type SideBetId } from "@/lib/game";
+import { SIDE_BET_LABELS, minRequiredBet, potBetForRound, type SideBetId } from "@/lib/game";
 import { useGame } from "@/lib/store/game-context";
-import { PlayingCard } from "./PlayingCard";
 import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
 
 const ALL_SIDE_BETS = Object.keys(SIDE_BET_LABELS) as SideBetId[];
 
 export function BettingPanel() {
-  const { state, mySeat, isHost, placeBets, updateSettings, lockSideBets, clampPersonalBet } = useGame();
+  const { state, mySeat, isHost, updateSettings, lockSideBets, lockPersonalBet } = useGame();
   const round = state.round!;
   const isBanker = round.bankerSeat === mySeat;
   const myId = `seat-${mySeat}`;
 
   // The pot each player contributes is fixed by the host (initial bet in the
   // first round, progressive pot afterwards); players cannot change it.
-  const potBet = potBetForRound(state.settings, round.index);
-  const isFirstRound = round.index <= 1;
+  const potBet = potBetForRound(state.settings, state.pot);
+  const isFreshPot = state.pot <= 0;
   const sideBetsLocked = round.sideBetsLocked;
   const mySideBetsLocked = round.sideBetLocks[mySeat];
 
@@ -27,7 +26,7 @@ export function BettingPanel() {
     (p) => p.chips < minRequiredBet(state.settings),
   );
 
-  const [step, setStep] = useState<"main" | "side">(mySideBetsLocked ? "main" : "side");
+  const [step, setStep] = useState<"side" | "personal" | "waiting">(mySideBetsLocked ? "personal" : "side");
   const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
   const [joined, setJoined] = useState<Record<SideBetId, boolean>>(
     () => Object.fromEntries(ALL_SIDE_BETS.map((id) => [id, false])) as Record<SideBetId, boolean>,
@@ -37,8 +36,6 @@ export function BettingPanel() {
     () => ALL_SIDE_BETS.filter((id) => state.settings.enabledSideBets[id]),
     [state.settings.enabledSideBets],
   );
-
-  const hand = useMemo(() => sortByRankDesc(round.hands[mySeat]), [round.hands, mySeat]);
 
   const isSideStep = step === "side" && !mySideBetsLocked;
 
@@ -55,23 +52,12 @@ export function BettingPanel() {
     (personalBet == null ||
       personalBet < state.settings.minPersonalBet ||
       (state.settings.maxPersonalBet != null && personalBet > state.settings.maxPersonalBet));
-  const betsInvalid = personalInvalid;
-
-  const finish = () => {
-    if (betsInvalid) return;
-    const sideBets = enabledSide.filter((id) => joined[id]);
-    placeBets({
-      potBet,
-      personalBet: isBanker ? 0 : clampPersonalBet(personalBet ?? 0),
-      sideBets,
-    });
-  };
 
   const header = (
     <header className="mb-5 flex items-center justify-between fade-up">
       <div>
         <h2 className="text-xl font-black gold-text">
-          {isSideStep ? "Side Bets" : "Place Your Bets"}
+          {isSideStep ? "Side Bets" : "Personal Bet"}
         </h2>
         <p className="text-sm text-slate-400">
           Round {round.index} · Banker:{" "}
@@ -100,8 +86,8 @@ export function BettingPanel() {
             A player is in Zero Balance Status. No pot contributions, personal bets or side bets
             this round — everyone plays a normal hand until the pot is won by a Banker.
           </p>
-          <GoldButton onClick={() => placeBets({ potBet: 0, personalBet: 0, sideBets: [] })}>
-            See Cards &amp; Arrange
+          <GoldButton onClick={() => void lockSideBets([]).then((locked) => locked && lockPersonalBet(0))}>
+            Lock Bets &amp; See Cards
           </GoldButton>
         </Panel>
       </div>
@@ -237,8 +223,13 @@ export function BettingPanel() {
             onClick={() => {
               if (!canLockSideBets) return;
               const sideBets = enabledSide.filter((id) => joined[id]);
-              void lockSideBets(sideBets).then((locked) => {
-                if (locked) setStep("main");
+              void lockSideBets(sideBets).then(async (locked) => {
+                if (!locked) return;
+                if (isBanker) {
+                  if (await lockPersonalBet(0)) setStep("waiting");
+                } else {
+                  setStep("personal");
+                }
               });
             }}
           >
@@ -249,31 +240,34 @@ export function BettingPanel() {
     );
   }
 
-  // --- Step 2: main bets + cards (side bets already locked) ---------------
+  if (step === "waiting" || isBanker) {
+    return (
+      <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+        {header}
+        <Panel className="text-center fade-up">
+          <h3 className="mb-1 text-lg font-black text-gold">Personal Bet Locked</h3>
+          <p className="text-sm text-slate-400">Waiting for the other challengers to lock their personal bets.</p>
+        </Panel>
+      </div>
+    );
+  }
+
+  // --- Step 2: challengers lock personal bets before cards are shown ------
   return (
-    <div className="mx-auto w-full max-w-4xl p-4 sm:p-6">
+    <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
       {header}
 
       <Panel className="mb-4 fade-up">
-        <SectionTitle>Your Cards</SectionTitle>
-        <div className="flex flex-wrap gap-1.5">
-          {hand.map((c, i) => (
-            <PlayingCard key={c.id} card={c} size="sm" dealDelay={i * 40} />
-          ))}
-        </div>
-      </Panel>
-
-      <Panel className="mb-4 fade-up">
-        <SectionTitle>Mandatory & Personal Bets</SectionTitle>
-        {isFirstRound ? (
+        <SectionTitle>Personal Bet</SectionTitle>
+        {isFreshPot ? (
           <p className="mb-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">
-            First round uses the host&apos;s initial bet. Later rounds use the progressive pot.
+            A new progressive pot starts with the host&apos;s Initial Pot Bet.
           </p>
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <span className="text-xs text-slate-400">
-              {isFirstRound ? "Initial Bet (set by host)" : "Progressive Pot (set by host)"}
+              {isFreshPot ? "Initial Pot Bet (set by host)" : "Progressive Pot Bet (set by host)"}
             </span>
             <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-2">
               <span className="text-sm font-bold text-gold">{potBet}</span>
@@ -312,8 +306,16 @@ export function BettingPanel() {
       </Panel>
 
       <div className="mt-6 flex justify-end fade-up">
-        <GoldButton onClick={finish} disabled={betsInvalid}>
-          Confirm Bets &amp; Arrange Cards
+        <GoldButton
+          onClick={() => {
+            if (personalInvalid) return;
+            void lockPersonalBet(personalBet ?? 0).then((locked) => {
+              if (locked) setStep("waiting");
+            });
+          }}
+          disabled={personalInvalid}
+        >
+          Lock Personal Bet
         </GoldButton>
       </div>
     </div>

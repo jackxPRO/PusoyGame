@@ -74,11 +74,13 @@ create table if not exists public.rounds (
   phase        text not null default 'betting'
                check (phase in ('betting', 'arranging', 'revealed')),
   side_bets_locked boolean not null default false,
+  personal_bets_locked boolean not null default false,
   created_at   timestamptz not null default now(),
   unique (room_id, round_no)
 );
 
 alter table public.rounds add column if not exists side_bets_locked boolean not null default false;
+alter table public.rounds add column if not exists personal_bets_locked boolean not null default false;
 
 -- A player's per-round choices (bets, arrangement, declared special).
 create table if not exists public.round_moves (
@@ -90,6 +92,7 @@ create table if not exists public.round_moves (
   personal_bet     integer not null default 0,
   side_bets        text[] not null default '{}',
   side_bets_locked boolean not null default false,
+  personal_bet_locked boolean not null default false,
   arrangement      jsonb,                     -- { front, middle, back }
   declared_special text,
   submitted        boolean not null default false,
@@ -98,6 +101,7 @@ create table if not exists public.round_moves (
 );
 
 alter table public.round_moves add column if not exists side_bets_locked boolean not null default false;
+alter table public.round_moves add column if not exists personal_bet_locked boolean not null default false;
 
 -- Final resolved result for a round (RoundResult snapshot + chip deltas).
 create table if not exists public.round_results (

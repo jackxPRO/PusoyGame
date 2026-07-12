@@ -52,6 +52,7 @@ export interface RoundState {
   index: number;
   bankerSeat: number;
   sideBetsLocked: boolean;
+  personalBetsLocked: boolean;
   sideBetLocks: boolean[];
   hands: Card[][]; // by seat
   arrangements: Arrangement[]; // by seat
@@ -131,12 +132,12 @@ function clampBet(value: number, min: number, max: number | null): number {
   return v;
 }
 
-function botBets(settings: HostSettings, roundIndex: number): SeatBets {
+function botBets(settings: HostSettings): SeatBets {
   const enabledSide = (Object.keys(settings.enabledSideBets) as SideBetId[]).filter(
     (id) => settings.enabledSideBets[id],
   );
   return {
-    potBet: potBetForRound(settings, roundIndex),
+    potBet: settings.initialPotBet,
     personalBet: settings.minPersonalBet,
     sideBets: enabledSide,
   };
@@ -144,8 +145,7 @@ function botBets(settings: HostSettings, roundIndex: number): SeatBets {
 
 function startRound(state: GameState): GameState {
   const hands = deal(SEAT_COUNT);
-  const roundIndex = state.roundCounter + 1;
-  const bets = state.players.map(() => botBets(state.settings, roundIndex));
+  const bets = state.players.map(() => botBets(state.settings));
   const arrangements = hands.map((h) => autoArrange(h, state.settings.suitRanking));
   const declared: (SpecialHandId | null)[] = hands.map((h, seat) =>
     seat === HUMAN_SEAT ? null : bestSpecial(h, state.settings),
@@ -154,6 +154,7 @@ function startRound(state: GameState): GameState {
     index: state.roundCounter + 1,
     bankerSeat: state.bankerSeat,
     sideBetsLocked: false,
+    personalBetsLocked: false,
     sideBetLocks: Array(SEAT_COUNT).fill(false),
     hands,
     arrangements,
@@ -273,6 +274,7 @@ export interface GameContextValue {
   createGame: (nickname: string, settings: HostSettings) => void;
   updateSettings: (patch: Partial<HostSettings>) => void;
   lockSideBets: (sideBets: SideBetId[]) => Promise<boolean>;
+  lockPersonalBet: (personalBet: number) => Promise<boolean>;
   startRound: () => void;
   placeBets: (bets: SeatBets) => void;
   setHumanArrangement: (arrangement: Arrangement) => void;
@@ -302,6 +304,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const startRound = useCallback(() => dispatch({ type: "START_ROUND" }), []);
   const placeBets = useCallback((bets: SeatBets) => dispatch({ type: "PLACE_BETS", bets }), []);
   const lockSideBets = useCallback(async () => true, []);
+  const lockPersonalBet = useCallback(async () => true, []);
   const setHumanArrangement = useCallback(
     (arrangement: Arrangement) => dispatch({ type: "SET_ARRANGEMENT", arrangement }),
     [],
@@ -330,10 +333,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     (v: number) =>
       clampBet(
         v,
-        potBetForRound(state.settings, state.round?.index ?? 1),
-        state.settings.maxPotBet,
+        potBetForRound(state.settings, state.pot),
+        null,
       ),
-    [state.settings, state.round?.index],
+    [state.settings, state.pot],
   );
   const clampPersonalBet = useCallback(
     (v: number) => clampBet(v, state.settings.minPersonalBet, state.settings.maxPersonalBet),
@@ -347,6 +350,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     createGame,
     updateSettings,
     lockSideBets,
+    lockPersonalBet,
     startRound,
     placeBets,
     setHumanArrangement,

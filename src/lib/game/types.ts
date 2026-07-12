@@ -83,10 +83,10 @@ export const SIDE_BET_LABELS: Readonly<Record<SideBetId, string>> = {
 
 export interface HostSettings {
   bankerRotation: BankerRotation;
-  minPotBet: number;
-  maxPotBet: number | null;
-  /** Higher mandatory pot each player must bet in the first round only. */
-  mandatoryPot: number;
+  /** Per-player contribution when a new progressive pot starts. */
+  initialPotBet: number;
+  /** Per-player contribution while a progressive pot is active. */
+  progressivePotBet: number;
   minPersonalBet: number;
   maxPersonalBet: number | null;
   scoopBonus: boolean;
@@ -112,13 +112,14 @@ export interface HostSettings {
 }
 
 /**
- * The pot each player contributes is fixed by the host: a higher initial bet in
- * the first round, then the progressive pot for every later round.
+ * A fresh pot starts with the initial contribution. Every later round uses the
+ * progressive contribution until a banker scoops and resets the pot to zero.
  */
-export function potBetForRound(settings: HostSettings, roundIndex: number): number {
-  const initial =
-    typeof settings.mandatoryPot === "number" ? settings.mandatoryPot : settings.minPotBet;
-  return roundIndex <= 1 ? initial : settings.minPotBet;
+export function potBetForRound(settings: HostSettings, currentPot: number): number {
+  // Fallbacks keep rooms created with the former settings shape playable.
+  const initial = settings.initialPotBet ?? (settings as { mandatoryPot?: number }).mandatoryPot ?? 0;
+  const progressive = settings.progressivePotBet ?? (settings as { minPotBet?: number }).minPotBet ?? 0;
+  return currentPot <= 0 ? initial : progressive;
 }
 
 /**
@@ -126,7 +127,8 @@ export function potBetForRound(settings: HostSettings, roundIndex: number): numb
  * balance falls below this enters Zero Balance Status (Rule 15).
  */
 export function minRequiredBet(settings: HostSettings): number {
-  return Math.min(settings.minPotBet, settings.minPersonalBet);
+  const progressive = settings.progressivePotBet ?? (settings as { minPotBet?: number }).minPotBet ?? 0;
+  return Math.min(progressive, settings.minPersonalBet);
 }
 
 export function defaultSettings(): HostSettings {
@@ -141,9 +143,8 @@ export function defaultSettings(): HostSettings {
   ) as Record<SideBetId, number>;
   return {
     bankerRotation: "fixed",
-    minPotBet: 10,
-    maxPotBet: null,
-    mandatoryPot: 20,
+    initialPotBet: 20,
+    progressivePotBet: 10,
     minPersonalBet: 10,
     maxPersonalBet: null,
     scoopBonus: true,
