@@ -9,7 +9,7 @@ import { GoldButton, NumberField, Panel, SectionTitle, Toggle } from "./ui";
 const ALL_SIDE_BETS = Object.keys(SIDE_BET_LABELS) as SideBetId[];
 
 export function BettingPanel() {
-  const { state, mySeat, isHost, placeBets, updateSettings, clampPersonalBet } = useGame();
+  const { state, mySeat, isHost, placeBets, updateSettings, lockSideBets, clampPersonalBet } = useGame();
   const round = state.round!;
   const isBanker = round.bankerSeat === mySeat;
   const myId = `seat-${mySeat}`;
@@ -18,6 +18,7 @@ export function BettingPanel() {
   // first round, progressive pot afterwards); players cannot change it.
   const potBet = potBetForRound(state.settings, round.index);
   const isFirstRound = round.index <= 1;
+  const sideBetsLocked = round.sideBetsLocked;
 
   // Rule 15 table effect: with any player at zero balance, betting is suspended
   // for everyone — the round plays out as normal Pusoy with no chips wagered.
@@ -107,6 +108,20 @@ export function BettingPanel() {
   // --- Step 1: Side Bets FIRST (blind — before cards are shown) -----------
   if (step === "side") {
     const joinedCount = enabledSide.filter((id) => joined[id]).length;
+    if (!isHost && !sideBetsLocked) {
+      return (
+        <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+          {header}
+          <Panel className="text-center fade-up">
+            <h3 className="mb-1 text-lg font-black text-gold">Side Bets Being Set Up</h3>
+            <p className="text-sm text-slate-400">
+              Waiting for the host to lock the available side bets. You&apos;ll be able to choose
+              your side bets and view your cards immediately afterward.
+            </p>
+          </Panel>
+        </div>
+      );
+    }
     return (
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         {header}
@@ -225,7 +240,19 @@ export function BettingPanel() {
           <span className="text-xs text-slate-500">
             {enabledSide.length ? `Joined ${joinedCount}/${enabledSide.length}` : ""}
           </span>
-          <GoldButton onClick={() => setStep("main")}>Lock Side Bets &amp; See Cards</GoldButton>
+          <GoldButton
+            onClick={() => {
+              if (!isHost) {
+                setStep("main");
+                return;
+              }
+              void lockSideBets().then((locked) => {
+                if (locked) setStep("main");
+              });
+            }}
+          >
+            Lock Side Bets &amp; See Cards
+          </GoldButton>
         </div>
       </div>
     );

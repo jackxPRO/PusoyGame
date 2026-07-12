@@ -51,6 +51,7 @@ export interface SeatBets {
 export interface RoundState {
   index: number;
   bankerSeat: number;
+  sideBetsLocked: boolean;
   hands: Card[][]; // by seat
   arrangements: Arrangement[]; // by seat
   declared: (SpecialHandId | null)[]; // by seat
@@ -151,6 +152,7 @@ function startRound(state: GameState): GameState {
   const round: RoundState = {
     index: state.roundCounter + 1,
     bankerSeat: state.bankerSeat,
+    sideBetsLocked: false,
     hands,
     arrangements,
     declared,
@@ -268,6 +270,7 @@ export interface GameContextValue {
   isHost: boolean;
   createGame: (nickname: string, settings: HostSettings) => void;
   updateSettings: (patch: Partial<HostSettings>) => void;
+  lockSideBets: () => Promise<boolean>;
   startRound: () => void;
   placeBets: (bets: SeatBets) => void;
   setHumanArrangement: (arrangement: Arrangement) => void;
@@ -296,6 +299,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   );
   const startRound = useCallback(() => dispatch({ type: "START_ROUND" }), []);
   const placeBets = useCallback((bets: SeatBets) => dispatch({ type: "PLACE_BETS", bets }), []);
+  const lockSideBets = useCallback(async () => true, []);
   const setHumanArrangement = useCallback(
     (arrangement: Arrangement) => dispatch({ type: "SET_ARRANGEMENT", arrangement }),
     [],
@@ -340,6 +344,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     isHost: true,
     createGame,
     updateSettings,
+    lockSideBets,
     startRound,
     placeBets,
     setHumanArrangement,

@@ -73,9 +73,12 @@ create table if not exists public.rounds (
   hands        jsonb not null,                -- Card[][] by seat (private)
   phase        text not null default 'betting'
                check (phase in ('betting', 'arranging', 'revealed')),
+  side_bets_locked boolean not null default false,
   created_at   timestamptz not null default now(),
   unique (room_id, round_no)
 );
+
+alter table public.rounds add column if not exists side_bets_locked boolean not null default false;
 
 -- A player's per-round choices (bets, arrangement, declared special).
 create table if not exists public.round_moves (

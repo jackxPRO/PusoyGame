@@ -80,6 +80,7 @@ interface RoundRow {
   banker_seat: number;
   hands: Card[][];
   phase: string;
+  side_bets_locked?: boolean;
 }
 interface MoveRow {
   id: string;
@@ -973,6 +974,19 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     [session, room, localSettings, run],
   );
 
+  const lockSideBets = useCallback(async (): Promise<boolean> => {
+    if (!session || !room || !round || room.host_seat !== session.mySeat) return false;
+    const { error: lockError } = await getSupabase()
+      .from("rounds")
+      .update({ side_bets_locked: true })
+      .eq("id", round.id);
+    if (lockError) {
+      setError(`Lock side bets: ${lockError.message}`);
+      return false;
+    }
+    return true;
+  }, [session, room, round]);
+
   // Host controls (Rule 12): pause/resume the game and remove disconnected
   // players between rounds.
   const pauseGame = useCallback(
@@ -1217,6 +1231,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       ? {
           index: round.round_no,
           bankerSeat: round.banker_seat,
+          sideBetsLocked: Boolean(round.side_bets_locked),
           hands: round.hands,
           arrangements: Array.from({ length: SEAT_COUNT }, (_, seat) => {
             const dealtHand = round.hands[seat];
@@ -1275,6 +1290,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       isHost: room.host_seat === session.mySeat,
       createGame: () => {},
       updateSettings,
+      lockSideBets,
       startRound: () => void dealRound(),
       placeBets,
       setHumanArrangement: (a: Arrangement) => setMyArrangement(a),
@@ -1301,6 +1317,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     effectiveBetsPlaced,
     effectiveSubmitted,
     updateSettings,
+    lockSideBets,
     dealRound,
     placeBets,
     submitRound,
