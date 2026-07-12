@@ -14,17 +14,19 @@ export function BettingPanel() {
   const myId = `seat-${mySeat}`;
 
   // The pot each player contributes is fixed by the host (initial bet in the
-  // first round, progressive pot afterwards); players cannot change it.
-  const potBet = potBetForRound(state.settings, state.pot);
-  const isFreshPot = state.pot <= 0;
+  // first round, progressive pot afterwards); players cannot change it. The
+  // ante is charged up front at the start of the round, so `potAnte`/`freshPot`
+  // reflect the amount collected before the pot was grown this round.
+  const potBet = round.potAnte ?? potBetForRound(state.settings, state.pot);
+  const isFreshPot = round.freshPot ?? state.pot <= 0;
   const sideBetsLocked = round.sideBetsLocked;
   const mySideBetsLocked = round.sideBetLocks[mySeat];
 
   // Rule 15 table effect: with any player at zero balance, betting is suspended
   // for everyone — the round plays out as normal Pusoy with no chips wagered.
-  const bettingSuspended = state.players.some(
-    (p) => p.chips < minRequiredBet(state.settings),
-  );
+  const bettingSuspended =
+    round.bettingSuspended ??
+    state.players.some((p) => p.chips < minRequiredBet(state.settings));
 
   const [step, setStep] = useState<"side" | "personal" | "waiting">(mySideBetsLocked ? "personal" : "side");
   const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
