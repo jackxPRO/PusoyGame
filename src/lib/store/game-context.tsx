@@ -52,6 +52,7 @@ export interface RoundState {
   index: number;
   bankerSeat: number;
   sideBetsLocked: boolean;
+  sideBetLocks: boolean[];
   hands: Card[][]; // by seat
   arrangements: Arrangement[]; // by seat
   declared: (SpecialHandId | null)[]; // by seat
@@ -153,6 +154,7 @@ function startRound(state: GameState): GameState {
     index: state.roundCounter + 1,
     bankerSeat: state.bankerSeat,
     sideBetsLocked: false,
+    sideBetLocks: Array(SEAT_COUNT).fill(false),
     hands,
     arrangements,
     declared,
@@ -270,7 +272,7 @@ export interface GameContextValue {
   isHost: boolean;
   createGame: (nickname: string, settings: HostSettings) => void;
   updateSettings: (patch: Partial<HostSettings>) => void;
-  lockSideBets: () => Promise<boolean>;
+  lockSideBets: (sideBets: SideBetId[]) => Promise<boolean>;
   startRound: () => void;
   placeBets: (bets: SeatBets) => void;
   setHumanArrangement: (arrangement: Arrangement) => void;

@@ -90,6 +90,7 @@ interface MoveRow {
   pot_bet: number;
   personal_bet: number;
   side_bets: string[];
+  side_bets_locked?: boolean;
   arrangement: Arrangement | null;
   declared_special: string | null;
   submitted: boolean;
@@ -647,6 +648,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
         .then(() => undefined);
     };
     window.addEventListener("offline", markDisconnected);
+    window.addEventListener("pagehide", markDisconnected);
     const id = setInterval(() => {
       const supabase = getSupabase();
       void loadRoomState(session.roomId);
@@ -701,7 +703,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
       // migration is only meaningful after a game has started.
       const hostGone =
         r.status === "in_progress" &&
-        (!hostPlayer || staleFor(hostPlayer) > reconnectMs);
+        (!hostPlayer || (!hostPlayer.connected && staleFor(hostPlayer) > reconnectMs));
       if (hostGone) {
         const next = nextLiveSeatClockwise(r.host_seat, ps);
         if (next !== null && next !== r.host_seat) {
@@ -716,6 +718,7 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     }, 2000);
     return () => {
       window.removeEventListener("offline", markDisconnected);
+      window.removeEventListener("pagehide", markDisconnected);
       clearInterval(id);
     };
   }, [session, loadRoomState]);
@@ -974,9 +977,26 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     [session, room, localSettings, run],
   );
 
-  const lockSideBets = useCallback(async (): Promise<boolean> => {
-    if (!session || !room || !round || room.host_seat !== session.mySeat) return false;
-    const { error: lockError } = await getSupabase()
+  const lockSideBets = useCallback(async (sideBets: SideBetId[]): Promise<boolean> => {
+    if (!session || !room || !round) return false;
+    const supabase = getSupabase();
+    const { error: moveError } = await supabase.from("round_moves").upsert(
+      {
+        round_id: round.id,
+        room_id: room.id,
+        seat: session.mySeat,
+        side_bets: sideBets,
+        side_bets_locked: true,
+        submitted: false,
+      },
+      { onConflict: "round_id,seat" },
+    );
+    if (moveError) {
+      setError(`Lock side bets: ${moveError.message}`);
+      return false;
+    }
+    if (room.host_seat !== session.mySeat) return true;
+    const { error: lockError } = await supabase
       .from("rounds")
       .update({ side_bets_locked: true })
       .eq("id", round.id);
@@ -1232,6 +1252,9 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
           index: round.round_no,
           bankerSeat: round.banker_seat,
           sideBetsLocked: Boolean(round.side_bets_locked),
+          sideBetLocks: Array.from({ length: SEAT_COUNT }, (_, seat) =>
+            Boolean(bySeat.get(seat)?.side_bets_locked),
+          ),
           hands: round.hands,
           arrangements: Array.from({ length: SEAT_COUNT }, (_, seat) => {
             const dealtHand = round.hands[seat];

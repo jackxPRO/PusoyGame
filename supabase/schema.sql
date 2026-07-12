@@ -89,12 +89,15 @@ create table if not exists public.round_moves (
   pot_bet          integer not null default 0,
   personal_bet     integer not null default 0,
   side_bets        text[] not null default '{}',
+  side_bets_locked boolean not null default false,
   arrangement      jsonb,                     -- { front, middle, back }
   declared_special text,
   submitted        boolean not null default false,
   updated_at       timestamptz not null default now(),
   unique (round_id, seat)
 );
+
+alter table public.round_moves add column if not exists side_bets_locked boolean not null default false;
 
 -- Final resolved result for a round (RoundResult snapshot + chip deltas).
 create table if not exists public.round_results (

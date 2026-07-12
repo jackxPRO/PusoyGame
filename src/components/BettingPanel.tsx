@@ -19,6 +19,7 @@ export function BettingPanel() {
   const potBet = potBetForRound(state.settings, round.index);
   const isFirstRound = round.index <= 1;
   const sideBetsLocked = round.sideBetsLocked;
+  const mySideBetsLocked = round.sideBetLocks[mySeat];
 
   // Rule 15 table effect: with any player at zero balance, betting is suspended
   // for everyone — the round plays out as normal Pusoy with no chips wagered.
@@ -26,7 +27,7 @@ export function BettingPanel() {
     (p) => p.chips < minRequiredBet(state.settings),
   );
 
-  const [step, setStep] = useState<"main" | "side">("side");
+  const [step, setStep] = useState<"main" | "side">(mySideBetsLocked ? "main" : "side");
   const [personalBet, setPersonalBet] = useState<number | null>(state.settings.minPersonalBet);
   const [joined, setJoined] = useState<Record<SideBetId, boolean>>(
     () => Object.fromEntries(ALL_SIDE_BETS.map((id) => [id, false])) as Record<SideBetId, boolean>,
@@ -38,6 +39,8 @@ export function BettingPanel() {
   );
 
   const hand = useMemo(() => sortByRankDesc(round.hands[mySeat]), [round.hands, mySeat]);
+
+  const isSideStep = step === "side" && !mySideBetsLocked;
 
   const setJoin = (id: SideBetId, v: boolean) => setJoined((cur) => ({ ...cur, [id]: v }));
 
@@ -68,7 +71,7 @@ export function BettingPanel() {
     <header className="mb-5 flex items-center justify-between fade-up">
       <div>
         <h2 className="text-xl font-black gold-text">
-          {step === "main" ? "Place Your Bets" : "Side Bets"}
+          {isSideStep ? "Side Bets" : "Place Your Bets"}
         </h2>
         <p className="text-sm text-slate-400">
           Round {round.index} · Banker:{" "}
@@ -106,7 +109,7 @@ export function BettingPanel() {
   }
 
   // --- Step 1: Side Bets FIRST (blind — before cards are shown) -----------
-  if (step === "side") {
+  if (isSideStep) {
     const joinedCount = enabledSide.filter((id) => joined[id]).length;
     if (!isHost && !sideBetsLocked) {
       return (
@@ -242,11 +245,8 @@ export function BettingPanel() {
           </span>
           <GoldButton
             onClick={() => {
-              if (!isHost) {
-                setStep("main");
-                return;
-              }
-              void lockSideBets().then((locked) => {
+              const sideBets = enabledSide.filter((id) => joined[id]);
+              void lockSideBets(sideBets).then((locked) => {
                 if (locked) setStep("main");
               });
             }}
