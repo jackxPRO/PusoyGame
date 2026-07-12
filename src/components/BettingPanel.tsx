@@ -59,7 +59,7 @@ export function BettingPanel() {
     <header className="mb-5 flex items-center justify-between fade-up">
       <div>
         <h2 className="text-xl font-black gold-text">
-          {isSideStep ? "Side Bets" : "Personal Bet"}
+          {isSideStep ? "Side Bets" : isBanker ? "Pot Ante" : "Personal Bet"}
         </h2>
         <p className="text-sm text-slate-400">
           Round {round.index} · Banker:{" "}
@@ -225,13 +225,9 @@ export function BettingPanel() {
             onClick={() => {
               if (!canLockSideBets) return;
               const sideBets = enabledSide.filter((id) => joined[id]);
-              void lockSideBets(sideBets).then(async (locked) => {
+              void lockSideBets(sideBets).then((locked) => {
                 if (!locked) return;
-                if (isBanker) {
-                  if (await lockPersonalBet(0)) setStep("waiting");
-                } else {
-                  setStep("personal");
-                }
+                setStep("personal");
               });
             }}
           >
@@ -242,7 +238,7 @@ export function BettingPanel() {
     );
   }
 
-  if (step === "waiting" || isBanker) {
+  if (step === "waiting") {
     return (
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         {header}
@@ -260,7 +256,7 @@ export function BettingPanel() {
       {header}
 
       <Panel className="mb-4 fade-up">
-        <SectionTitle>Personal Bet</SectionTitle>
+        <SectionTitle>{isBanker ? "Pot Ante" : "Personal Bet"}</SectionTitle>
         {isFreshPot ? (
           <p className="mb-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">
             A new progressive pot starts with the host&apos;s Initial Pot Bet.
@@ -311,13 +307,13 @@ export function BettingPanel() {
         <GoldButton
           onClick={() => {
             if (personalInvalid) return;
-            void lockPersonalBet(personalBet ?? 0).then((locked) => {
+            void lockPersonalBet(isBanker ? 0 : personalBet ?? 0).then((locked) => {
               if (locked) setStep("waiting");
             });
           }}
           disabled={personalInvalid}
         >
-          Lock Personal Bet
+          {isBanker ? "Confirm & See Cards" : "Lock Personal Bet"}
         </GoldButton>
       </div>
     </div>
