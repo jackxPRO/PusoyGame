@@ -1316,7 +1316,11 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
 
     let phase: GameState["phase"] = "lobby";
     if (round) {
-      if (result) phase = "revealed";
+      // Guard against stale result rows from the previous round being present
+      // momentarily during realtime/polling updates. Only reveal if the result
+      // belongs to the currently active round.
+      const hasCurrentResult = Boolean(result && result.round_id === round.id);
+      if (hasCurrentResult) phase = "revealed";
       else if (!round.personal_bets_locked) phase = "betting";
       else phase = "arranging";
     }
