@@ -111,20 +111,7 @@ export function BettingPanel() {
   // --- Step 1: Side Bets FIRST (blind — before cards are shown) -----------
   if (isSideStep) {
     const joinedCount = enabledSide.filter((id) => joined[id]).length;
-    if (!isHost && !sideBetsLocked) {
-      return (
-        <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
-          {header}
-          <Panel className="text-center fade-up">
-            <h3 className="mb-1 text-lg font-black text-gold">Side Bets Being Set Up</h3>
-            <p className="text-sm text-slate-400">
-              Waiting for the host to lock the available side bets. You&apos;ll be able to choose
-              your side bets and view your cards immediately afterward.
-            </p>
-          </Panel>
-        </div>
-      );
-    }
+    const canLockSideBets = isHost || sideBetsLocked;
     return (
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         {header}
@@ -211,10 +198,11 @@ export function BettingPanel() {
                         <button
                           type="button"
                           onClick={() => setJoin(id, true)}
+                          disabled={!canLockSideBets}
                           className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
                             inTicket
                               ? "bg-emerald-500 text-emerald-950 shadow-[0_4px_14px_rgba(16,185,129,0.35)]"
-                              : "border border-white/10 bg-white/5 text-slate-300 hover:border-emerald-400/40"
+                              : "border border-white/10 bg-white/5 text-slate-300 hover:border-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-45"
                           }`}
                         >
                           Join
@@ -222,10 +210,11 @@ export function BettingPanel() {
                         <button
                           type="button"
                           onClick={() => setJoin(id, false)}
+                          disabled={!canLockSideBets}
                           className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
                             !inTicket
                               ? "bg-rose-600 text-white shadow-[0_4px_14px_rgba(225,29,72,0.35)]"
-                              : "border border-white/10 bg-white/5 text-slate-300 hover:border-rose-400/40"
+                              : "border border-white/10 bg-white/5 text-slate-300 hover:border-rose-400/40 disabled:cursor-not-allowed disabled:opacity-45"
                           }`}
                         >
                           Decline
@@ -244,7 +233,9 @@ export function BettingPanel() {
             {enabledSide.length ? `Joined ${joinedCount}/${enabledSide.length}` : ""}
           </span>
           <GoldButton
+            disabled={!canLockSideBets}
             onClick={() => {
+              if (!canLockSideBets) return;
               const sideBets = enabledSide.filter((id) => joined[id]);
               void lockSideBets(sideBets).then((locked) => {
                 if (locked) setStep("main");

@@ -128,7 +128,7 @@ export function GoldButton({
       type={type}
       onClick={onClick}
       disabled={!!disabled}
-      className={`btn-gold rounded-xl px-5 py-2.5 text-sm ${className}`}
+      className={`btn-gold rounded-xl px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${className}`}
     >
       {children}
     </button>
