@@ -519,8 +519,18 @@ export function OnlineProvider({ children }: { children: ReactNode }) {
     if (room.host_seat !== session.mySeat) return;
     const active = players.filter((p) => !p.pending && !p.eliminated && p.connected);
     if (active.length < 2) return;
-    const locks = new Map(moves.map((m) => [m.seat, m.personal_bet_locked]));
-    if (!active.every((p) => locks.get(p.seat))) return;
+
+    // Only consider locks explicitly tied to the current round to avoid
+    // premature phase advancement from stale/partial move snapshots.
+    const currentRoundMoves = moves.filter((m) => m.round_id === round.id);
+    const bySeat = new Map(currentRoundMoves.map((m) => [m.seat, m]));
+
+    // Every active seat must have a move row for this round before we can lock.
+    if (!active.every((p) => bySeat.has(p.seat))) return;
+
+    // Then every active seat must have locked personal bet for this round.
+    if (!active.every((p) => Boolean(bySeat.get(p.seat)?.personal_bet_locked))) return;
+
     void getSupabase()
       .from("rounds")
       .update({ personal_bets_locked: true })

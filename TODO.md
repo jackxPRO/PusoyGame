@@ -1,3 +1,4 @@
 - [x] Fix online round restart flow after banker scoop so it starts from normal beginning phase
 - [x] Update phase derivation logic to avoid stale revealed state after new round creation
 - [x] Verify code paths for scoop and non-scoop next round transitions
+- [x] Prevent premature personal-bets lock on fresh rounds from stale/partial move state
